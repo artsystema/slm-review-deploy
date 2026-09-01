@@ -40,7 +40,6 @@ const timelineCount = el('timeline-count');
 const fillToggle = el('fill-toggle');
 const gridToggle = el('grid-toggle');
 const stageGrid = el('stage-grid');
-const shareLink = el('share-link');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
 const POLL_MIN_MS = 10000;
@@ -421,20 +420,6 @@ async function applyHash() {
     applyingHash = false;
   }
   writeHash();
-}
-
-async function copyShareLink() {
-  writeHash();
-  const url = window.location.href;
-  try {
-    await navigator.clipboard.writeText(url);
-    shareLink.classList.add('is-copied');
-    window.setTimeout(() => shareLink.classList.remove('is-copied'), 1600);
-  } catch {
-    // Clipboard access can be refused; showing the link still lets it be copied.
-    setNotice(url);
-    window.setTimeout(reportCounts, 6000);
-  }
 }
 
 // ---------- data loading ----------
@@ -1161,7 +1146,6 @@ loadEarlier.addEventListener('click', () => loadLayers(false).catch(error => set
 followToggle.addEventListener('click', () => setFollow(!state.follow));
 fillToggle.addEventListener('click', () => setFill(!state.fill));
 gridToggle.addEventListener('click', () => setGrid(!state.grid));
-shareLink.addEventListener('click', () => { copyShareLink().catch(() => {}); });
 // A link pasted into the open tab should move the viewer, not reload it.
 window.addEventListener('hashchange', () => { applyHash().catch(error => setNotice(error.message, true)); });
 
@@ -1190,7 +1174,7 @@ window.addEventListener('keydown', event => {
   if (/^[1-9]$/.test(event.key)) {
     const media = layerMedia(selected() || { media: [] });
     const item = media[Number(event.key) - 1];
-    if (item) { state.selectedMediaRole = item.role; renderSelector(); renderStage(); }
+    if (item) { state.selectedMediaRole = item.role; renderSelector(); renderStage(); writeHash(); }
   }
 });
 

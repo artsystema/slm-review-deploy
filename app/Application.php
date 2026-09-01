@@ -256,9 +256,6 @@ final class Application
             <div id="stage-grid" class="stage-grid" role="list" hidden></div>
             <p id="stage-empty" class="stage-empty">No frame selected.</p>
             <div class="stage-controls" role="group" aria-label="View controls">
-              <button id="share-link" class="share-link" type="button" aria-label="Copy a link to this view">
-                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2.4-2.4a2.6 2.6 0 0 0-3.7-3.7l-.9.9"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.9-.9"/></svg>
-              </button>
               <button id="grid-toggle" class="grid-toggle" type="button" aria-pressed="false" aria-label="Show every view at once">
                 <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
               </button>

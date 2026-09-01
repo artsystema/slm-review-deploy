@@ -92,11 +92,16 @@ https://review.example.com/#m=<uuid>&s=22&live=1
 https://review.example.com/#m=<uuid>&s=22&r=33&l=144&v=underfill_mask
 ```
 
+The fragment is rewritten as the viewer moves -- selecting a frame, stepping
+with the arrows, changing view, opening the grid -- so the address bar is always
+the link to copy and there is no separate share control to find.
+
 A link either follows the build (`live=1`) or pins one frame (`r`+`l`), never
 both: a link copied while following would otherwise silently mean a different
-layer to whoever opened it later. The link button beside the zoom controls
-copies the current state. A frame outside the opening window is paged back to,
-and one that was never published says so rather than showing a neighbour.
+layer to whoever opened it later. A frame outside the opening window is paged
+back to, and one that was never published says so rather than showing a
+neighbour. History is replaced rather than pushed, so scrubbing a hundred layers
+does not bury the back button.
 
 ## Manual smoke procedure
 
