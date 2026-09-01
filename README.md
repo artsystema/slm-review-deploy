@@ -104,6 +104,13 @@ from the clone. On **Pull or Deploy**, first choose **Update from Remote**, then
 **Deploy HEAD Commit**. cPanel requires a clean checkout and runs the checked-in
 tasks in order.
 
+This GoDaddy account keeps the SLM production folders below `public_html`, so
+the checked-in deployment targets are:
+
+- `/home/khzr7u2xld10/public_html/slm.artsystema.com`
+- `/home/khzr7u2xld10/public_html/slm-review`
+- `/home/khzr7u2xld10/public_html/slm-review-storage`
+
 The deployment manifest copies only `app/`, `migrations/`, `public/index.php`,
 and `public/assets/`. It verifies that the existing private configuration and
 public app-root file are present, then leaves these operator-owned paths alone:
@@ -116,6 +123,16 @@ public app-root file are present, then leaves these operator-owned paths alone:
 Leaving `.htaccess` out is deliberate: cPanel Directory Privacy writes its
 authentication directives there. Database migrations are copied for review but
 are never executed automatically.
+
+If cPanel leaves **Deploy HEAD Commit** queued, use cPanel **Terminal** to run
+the same guarded deployment directly:
+
+```bash
+bash /home/khzr7u2xld10/slm-review-deploy/tools/deploy-cpanel.sh
+```
+
+The script validates the production layout before copying anything and
+preserves `private/config.php`, frame storage, `app-root.php`, and `.htaccess`.
 
 ## Layout
 

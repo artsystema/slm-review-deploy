@@ -1,11 +1,11 @@
 ---
 deployment:
   tasks:
-    - /usr/bin/test -d "$HOME/slm.artsystema.com"
-    - /usr/bin/test -f "$HOME/slm.artsystema.com/app-root.php"
-    - /usr/bin/test -f "$HOME/slm-review/private/config.php"
-    - /bin/mkdir -p "$HOME/slm-review/app" "$HOME/slm-review/migrations" "$HOME/slm.artsystema.com/assets"
-    - /bin/cp -R app/. "$HOME/slm-review/app/"
-    - /bin/cp -R migrations/. "$HOME/slm-review/migrations/"
-    - /bin/cp -R public/assets/. "$HOME/slm.artsystema.com/assets/"
-    - /bin/cp public/index.php "$HOME/slm.artsystema.com/index.php"
+    - /usr/bin/test -d "$HOME/public_html/slm.artsystema.com"
+    - /usr/bin/test -f "$HOME/public_html/slm.artsystema.com/app-root.php"
+    - /usr/bin/test -f "$HOME/public_html/slm-review/private/config.php"
+    - /bin/mkdir -p "$HOME/public_html/slm-review/app" "$HOME/public_html/slm-review/migrations" "$HOME/public_html/slm.artsystema.com/assets"
+    - /bin/cp -R app/. "$HOME/public_html/slm-review/app/"
+    - /bin/cp -R migrations/. "$HOME/public_html/slm-review/migrations/"
+    - /bin/cp -R public/assets/. "$HOME/public_html/slm.artsystema.com/assets/"
+    - /bin/cp public/index.php "$HOME/public_html/slm.artsystema.com/index.php"
