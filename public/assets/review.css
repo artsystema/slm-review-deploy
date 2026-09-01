@@ -826,6 +826,9 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
   .selected-grid,
   .metrics-grid { grid-template-columns: 1fr; }
   .stage { max-height: 56vh; }
+
+  /* Two across on a phone: four 90px tiles show nothing worth clicking into. */
+  .stage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .evidence-card { min-height: 0; }
   .argon-panel { margin-top: 0; }
   .chart-card { min-height: 200px; }
