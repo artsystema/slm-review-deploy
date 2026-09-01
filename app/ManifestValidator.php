@@ -110,15 +110,20 @@ final class ManifestValidator
         if (!is_array($manifest['media']) || !array_is_list($manifest['media'])) {
             throw new HttpError(422, 'media must be an array');
         }
-        if (count($manifest['media']) > 3) {
-            throw new HttpError(422, 'a layer bundle may declare at most three media items');
-        }
         $mediaPaths = [
             'key_view' => 'key-view.jpg',
             'raw_before' => 'raw-before.jpg',
             'raw_after' => 'raw-after.jpg',
             'diagnostic_overlay' => 'diagnostic-overlay.jpg',
+            'renewal_unrenewed' => 'renewal-unrenewed.jpg',
+            'underfill_mask' => 'underfill-mask.jpg',
+            'underfill_residual' => 'underfill-residual.jpg',
+            'underfill_texture' => 'underfill-texture.jpg',
+            'underfill_baseline' => 'underfill-baseline.jpg',
         ];
+        if (count($manifest['media']) > count($mediaPaths)) {
+            throw new HttpError(422, 'a layer bundle declares more media items than there are roles');
+        }
         $media = [];
         $roles = [];
         $paths = [];

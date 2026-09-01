@@ -53,7 +53,10 @@ paths are examples only; substitute the cPanel account's actual home path.
    `/home/CPANEL_USER/slm-review/private/config.php` from
    `config.example.php`, with a generated ingest token and a private storage
    path such as `/home/CPANEL_USER/slm-review-storage`.
-4. Import `migrations/001_initial.sql` with phpMyAdmin into the new database.
+4. Import `migrations/001_initial.sql`, then `migrations/002_build_order.sql`,
+   with phpMyAdmin into the new database. The second migration adds the index
+   behind the build-ordered timeline and is required when upgrading an
+   existing install.
 5. Upload the contents of `public/` to the hostname document root. Copy
    `public/app-root.example.php` to `public/app-root.php` and set its returned
    string to `/home/CPANEL_USER/slm-review`. Never upload `private/config.php`
@@ -73,11 +76,22 @@ agent URL to the full base path, for example
 1. Visit `/` and confirm the browser requests the Directory Privacy password.
 2. Run the agent with `--once`; its JSON output should show `committed: 1` for
    a new bundle, then `attempted: 0` on the next pass.
-3. Refresh the viewer. Select the session, scrub frames, switch among Analysis,
-   Raw after, and Raw before, and confirm the index, verdict, defect chart
-   point, and argon snapshot match the local manifest. Confirm Left/Right
-   arrow keys scrub adjacent layers and repeat the review at a narrow mobile
-   viewport without horizontal page overflow.
+3. Open the viewer. Select the session and confirm the index, verdict, defect
+   chart point, and argon snapshot match the local manifest. Then check the
+   viewer behaviours the operator depends on:
+   - Press and drag along the timeline directly under the image; frames follow
+     the finger and the bubble names the layer being passed.
+   - Switch among Before, After, Analysis and the detector views. The frame
+     must not change size or position between them.
+   - Pinch or double-tap to zoom, drag to pan, and confirm the zoom is held
+     when the layer or the view changes. `0` resets it.
+   - Swipe left/right on an unzoomed image, and use Left/Right, Home/End and
+     the number keys.
+   - With the **Live** chip lit, run the agent again with `--once`. The new
+     layer must appear and be selected **without reloading the page**. Click
+     the chip, or select any earlier layer, and confirm it stops following
+     while still reporting that new layers arrived.
+   - Repeat at a narrow mobile viewport without horizontal page overflow.
 4. Stop the server during a pass or temporarily use an invalid URL. Confirm
    the monitor continues normally and the agent reports a retry/backlog.
 5. Restore the URL and run `--once`; confirm no duplicate remote layer appears.

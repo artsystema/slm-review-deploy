@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SlmReview;
 
 use PDO;
+use PDOStatement;
 
 final class ReviewRepository
 {
@@ -19,6 +20,7 @@ final class ReviewRepository
             'SELECT monitor_instance_id, session_local_id, MAX(session_name) AS session_name,
                     MAX(session_state) AS session_state, MIN(captured_at) AS first_captured_at,
                     MAX(captured_at) AS last_captured_at, COUNT(*) AS layer_count,
+                    MAX(id) AS latest_publication_id,
                     SUM(CASE WHEN analysis_status = \'completed\' THEN 1 ELSE 0 END) AS completed_count
              FROM publications
              WHERE status = \'committed\'
@@ -31,41 +33,117 @@ final class ReviewRepository
         return $statement->fetchAll();
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * One window of a session's layers, newest first in *build* order.
+     *
+     * Build order is (run_local_id, layer_index), not the auto-increment id.
+     * The id is arrival order: a bundle whose first upload failed is retried by
+     * the monitor's reconciler minutes later and lands after layers captured
+     * well after it. Ordering the timeline by id put those layers at the end of
+     * the strip, out of sequence with the build.
+     *
+     * @param array{run: int, layer: int, id: int}|null $before
+     * @return list<array<string, mixed>>
+     */
     public function layers(
         string $monitorId,
         ?int $sessionId,
         bool $unassigned,
-        int $beforeId,
+        ?array $before,
         int $limit,
         string $basePath,
-    ): array
+    ): array {
+        $sql = $this->selectClause() . $this->scopeClause($unassigned);
+        if ($before !== null) {
+            $sql .= ' AND (p.run_local_id, p.layer_index, p.id) < (:before_run, :before_layer, :before_id)';
+        }
+        $sql .= ' ORDER BY p.run_local_id DESC, p.layer_index DESC, p.id DESC LIMIT :limit';
+        $statement = $this->database->prepare($sql);
+        $this->bindScope($statement, $monitorId, $sessionId, $unassigned);
+        if ($before !== null) {
+            $statement->bindValue('before_run', $before['run'], PDO::PARAM_INT);
+            $statement->bindValue('before_layer', $before['layer'], PDO::PARAM_INT);
+            $statement->bindValue('before_id', $before['id'], PDO::PARAM_INT);
+        }
+        $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+        return $this->hydrate($statement->fetchAll(), $basePath);
+    }
+
+    /**
+     * Layers that arrived after `sinceId`, for polling clients.
+     *
+     * This one *is* keyed on the auto-increment id, because arrival is exactly
+     * the question being asked: a layer backfilled out of build order is still
+     * news to a viewer that has not seen it. The client merges the result into
+     * its own build-ordered list.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function layersSince(
+        string $monitorId,
+        ?int $sessionId,
+        bool $unassigned,
+        int $sinceId,
+        int $limit,
+        string $basePath,
+    ): array {
+        $sql = $this->selectClause() . $this->scopeClause($unassigned)
+            . ' AND p.id > :since_id ORDER BY p.id ASC LIMIT :limit';
+        $statement = $this->database->prepare($sql);
+        $this->bindScope($statement, $monitorId, $sessionId, $unassigned);
+        $statement->bindValue('since_id', $sinceId, PDO::PARAM_INT);
+        $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+        return $this->hydrate($statement->fetchAll(), $basePath);
+    }
+
+    /** Highest committed publication id in a session, or null when it is empty. */
+    public function latestPublicationId(string $monitorId, ?int $sessionId, bool $unassigned): ?int
     {
-        $sql = 'SELECT p.id, p.layer_index, p.captured_at, p.analysis_status, p.severity, p.analysis_state,
-                       p.key_view_state, p.manifest_json
+        $sql = 'SELECT MAX(p.id) AS latest FROM publications p
+                WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id'
+            . $this->scopeClause($unassigned);
+        $statement = $this->database->prepare($sql);
+        $this->bindScope($statement, $monitorId, $sessionId, $unassigned);
+        $statement->execute();
+        $value = $statement->fetchColumn();
+        return $value === false || $value === null ? null : (int) $value;
+    }
+
+    private function selectClause(): string
+    {
+        return 'SELECT p.id, p.run_local_id, p.layer_index, p.captured_at, p.analysis_status, p.severity,
+                       p.analysis_state, p.key_view_state, p.manifest_json
                 FROM publications p
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id';
-        if ($unassigned) {
-            $sql .= ' AND p.session_local_id IS NULL';
-        } else {
-            $sql .= ' AND p.session_local_id = :session_id';
-        }
-        if ($beforeId > 0) {
-            $sql .= ' AND p.id < :before_id';
-        }
-        $sql .= ' ORDER BY p.id DESC LIMIT :limit';
-        $statement = $this->database->prepare($sql);
+    }
+
+    private function scopeClause(bool $unassigned): string
+    {
+        return $unassigned ? ' AND p.session_local_id IS NULL' : ' AND p.session_local_id = :session_id';
+    }
+
+    private function bindScope(
+        PDOStatement $statement,
+        string $monitorId,
+        ?int $sessionId,
+        bool $unassigned,
+    ): void {
         $statement->bindValue('monitor_id', $monitorId);
         if (!$unassigned) {
             $statement->bindValue('session_id', $sessionId, PDO::PARAM_INT);
         }
-        if ($beforeId > 0) {
-            $statement->bindValue('before_id', $beforeId, PDO::PARAM_INT);
-        }
-        $statement->bindValue('limit', $limit, PDO::PARAM_INT);
-        $statement->execute();
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     * @return list<array<string, mixed>>
+     */
+    private function hydrate(array $records, string $basePath): array
+    {
         $rows = [];
-        foreach ($statement->fetchAll() as $row) {
+        foreach ($records as $row) {
             $manifest = json_decode($row['manifest_json'], true, 512, JSON_THROW_ON_ERROR);
             $media = [];
             $mediaByRole = [];
@@ -87,6 +165,7 @@ final class ReviewRepository
                 ?? null;
             $rows[] = [
                 'id' => (int) $row['id'],
+                'run_local_id' => (int) $row['run_local_id'],
                 'index' => (int) $row['layer_index'],
                 'captured_at' => $row['captured_at'],
                 'analysis' => $manifest['analysis'],
