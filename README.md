@@ -75,7 +75,9 @@ agent URL to the full base path, for example
    a new bundle, then `attempted: 0` on the next pass.
 3. Refresh the viewer. Select the session, scrub frames, switch among Analysis,
    Raw after, and Raw before, and confirm the index, verdict, defect chart
-   point, and argon snapshot match the local manifest.
+   point, and argon snapshot match the local manifest. Confirm Left/Right
+   arrow keys scrub adjacent layers and repeat the review at a narrow mobile
+   viewport without horizontal page overflow.
 4. Stop the server during a pass or temporarily use an invalid URL. Confirm
    the monitor continues normally and the agent reports a retry/backlog.
 5. Restore the URL and run `--once`; confirm no duplicate remote layer appears.

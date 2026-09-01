@@ -157,32 +157,39 @@ final class Application
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark">
   <title>SLM Remote Review</title>
   <link rel="stylesheet" href="assets/review.css">
 </head>
 <body>
-  <main class="review-shell">
-    <header class="masthead">
-      <p class="eyebrow">REMOTE EVIDENCE REVIEW</p>
-      <div><h1>Layer trace</h1><p>Read-only review. Remote data is not a machine-control signal.</p></div>
-      <label class="session-picker">Session<select id="session-select" aria-label="Review session"><option>Loading sessions...</option></select></label>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">SLM</span><div><strong>Remote review</strong><small>Layer evidence</small></div></div>
+      <span class="read-only-chip">read only</span>
+      <label class="session-picker"><span>Session</span><select id="session-select" aria-label="Review session"><option>Loading sessions...</option></select></label>
     </header>
-    <section id="notice" class="notice" aria-live="polite">Loading committed sessions...</section>
-    <section class="selected-grid" aria-label="Selected layer">
-      <article class="frame-card">
-        <div id="evidence-selector" class="evidence-selector" role="toolbar" aria-label="Layer evidence views"></div>
-        <div id="image-wrap" class="image-wrap"><p>No frame selected.</p></div>
-        <p id="frame-caption" class="frame-caption">No evidence selected.</p>
-      </article>
-      <aside class="evidence-card"><p class="eyebrow">SELECTED LAYER</p><h2 id="layer-title">No layer</h2><dl id="layer-facts"></dl><div id="argon-state" class="argon-state">Argon context unavailable.</div></aside>
-    </section>
-    <section class="metrics-grid">
-      <article class="chart-card"><div class="chart-heading"><div><p class="eyebrow">ROLLING QUALITY</p><h2>Defect rate</h2></div><strong id="defect-rate">--</strong></div><canvas id="defect-chart" height="180" aria-label="Rolling defect rate chart"></canvas><p id="defect-note" class="chart-note"></p></article>
-      <article class="chart-card"><div class="chart-heading"><div><p class="eyebrow">CAPTURED WITH LAYER</p><h2>Argon channels</h2></div><strong id="argon-label">--</strong></div><canvas id="argon-chart" height="180" aria-label="Argon snapshot chart"></canvas><p class="chart-note">Gaps mean no reliable reading. Values are never interpolated.</p></article>
-    </section>
-    <section class="filmstrip-section"><div><p class="eyebrow">TIMELINE</p><h2>Scrub layers</h2></div><div id="filmstrip" class="filmstrip" role="listbox" aria-label="Layer timeline"></div><button id="load-earlier" class="load-earlier" type="button" hidden>Load earlier layers</button></section>
-  </main>
+    <main class="review-shell">
+      <section id="notice" class="notice" aria-live="polite">Loading committed sessions...</section>
+      <section class="selected-grid" aria-label="Selected layer">
+        <article class="panel frame-card">
+          <div id="evidence-selector" class="evidence-selector" role="toolbar" aria-label="Layer evidence views"></div>
+          <div id="image-wrap" class="image-wrap"><p>No frame selected.</p></div>
+          <p id="frame-caption" class="frame-caption">No evidence selected.</p>
+        </article>
+        <aside class="panel evidence-card">
+          <div class="selected-heading"><div><p class="eyebrow">SELECTED LAYER</p><h1 id="layer-title">No layer</h1></div><span id="layer-severity" class="severity-badge severity-unknown">unknown</span></div>
+          <p id="analysis-reason" class="analysis-reason">Select a committed layer to inspect its result.</p>
+          <dl id="layer-facts"></dl>
+          <section class="argon-panel"><div class="subheading"><span>Argon snapshot</span><strong id="argon-combined">--</strong></div><div id="argon-state" class="argon-state">Argon context unavailable.</div></section>
+        </aside>
+      </section>
+      <section class="metrics-grid">
+        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow">ROLLING QUALITY</p><h2>Defect rate</h2></div><strong id="defect-rate">--</strong></div><canvas id="defect-chart" height="132" aria-label="Rolling defect rate chart"></canvas><p id="defect-note" class="chart-note"></p></article>
+        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow">CAPTURED WITH LAYER</p><h2>Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="132" aria-label="Argon snapshot chart"></canvas><p class="chart-note">Gaps mean no reliable reading. Values are never interpolated.</p></article>
+      </section>
+      <section class="panel filmstrip-section"><div class="filmstrip-heading"><div><p class="eyebrow">TIMELINE</p><h2>Layer filmstrip</h2></div><div class="timeline-tools"><span class="keyboard-hint">Arrow keys to scrub</span><button id="load-earlier" class="load-earlier" type="button" hidden>Load earlier</button></div></div><div id="filmstrip" class="filmstrip" role="listbox" aria-label="Layer timeline"></div></section>
+    </main>
+  </div>
   <script src="assets/review.js" defer></script>
 </body>
 </html>

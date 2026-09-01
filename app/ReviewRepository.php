@@ -90,6 +90,7 @@ final class ReviewRepository
                 'index' => (int) $row['layer_index'],
                 'captured_at' => $row['captured_at'],
                 'analysis' => $manifest['analysis'],
+                'run' => $manifest['run'],
                 'argon_snapshot' => $manifest['argon_snapshot'],
                 'key_view_state' => $row['key_view_state'],
                 'key_view_url' => $keyView['url'] ?? null,
