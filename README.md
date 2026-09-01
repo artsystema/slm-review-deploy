@@ -112,17 +112,20 @@ the checked-in deployment targets are:
 - `/home/khzr7u2xld10/public_html/slm-review-storage`
 
 The deployment manifest copies only `app/`, `migrations/`, `public/index.php`,
-and `public/assets/`. It verifies that the existing private configuration and
-public app-root file are present, then leaves these operator-owned paths alone:
+`public/assets/`, and deny-access files for the private directories. It verifies
+that the existing private configuration and public app-root file are present,
+then leaves these operator-owned paths alone:
 
 - `slm-review/private/config.php`
-- `slm-review-storage/`
+- frame data within `slm-review-storage/`
 - `slm.artsystema.com/app-root.php`
 - `slm.artsystema.com/.htaccess`
 
 Leaving `.htaccess` out is deliberate: cPanel Directory Privacy writes its
-authentication directives there. Database migrations are copied for review but
-are never executed automatically.
+authentication directives in the public site file. The deployment does install
+deny-all `.htaccess` files in `slm-review/` and `slm-review-storage/` because
+this account currently keeps those private directories below `public_html`.
+Database migrations are copied for review but are never executed automatically.
 
 If cPanel leaves **Deploy HEAD Commit** queued, use cPanel **Terminal** to run
 the same guarded deployment directly:
@@ -132,7 +135,8 @@ bash /home/khzr7u2xld10/slm-review-deploy/tools/deploy-cpanel.sh
 ```
 
 The script validates the production layout before copying anything and
-preserves `private/config.php`, frame storage, `app-root.php`, and `.htaccess`.
+preserves `private/config.php`, frame data, `app-root.php`, and the public site
+`.htaccess`. It also denies direct web access to the private app and storage.
 
 ## Layout
 
