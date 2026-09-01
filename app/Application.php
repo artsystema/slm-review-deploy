@@ -170,7 +170,11 @@ final class Application
     </header>
     <section id="notice" class="notice" aria-live="polite">Loading committed sessions...</section>
     <section class="selected-grid" aria-label="Selected layer">
-      <article class="frame-card"><div id="image-wrap" class="image-wrap"><p>No frame selected.</p></div></article>
+      <article class="frame-card">
+        <div id="evidence-selector" class="evidence-selector" role="toolbar" aria-label="Layer evidence views"></div>
+        <div id="image-wrap" class="image-wrap"><p>No frame selected.</p></div>
+        <p id="frame-caption" class="frame-caption">No evidence selected.</p>
+      </article>
       <aside class="evidence-card"><p class="eyebrow">SELECTED LAYER</p><h2 id="layer-title">No layer</h2><dl id="layer-facts"></dl><div id="argon-state" class="argon-state">Argon context unavailable.</div></aside>
     </section>
     <section class="metrics-grid">

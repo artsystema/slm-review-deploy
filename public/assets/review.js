@@ -1,9 +1,16 @@
-const state = { sessions: [], layers: [], selectedId: null, nextBeforeId: null, loading: false };
+const state = { sessions: [], layers: [], selectedId: null, selectedMediaRole: null, nextBeforeId: null, loading: false };
 const select = document.querySelector('#session-select');
 const notice = document.querySelector('#notice');
 const filmstrip = document.querySelector('#filmstrip');
 const loadEarlier = document.querySelector('#load-earlier');
 const basePath = window.location.pathname.replace(/\/$/, '');
+const mediaOrder = ['diagnostic_overlay', 'raw_after', 'raw_before', 'key_view'];
+const mediaLabels = {
+  diagnostic_overlay: 'Analysis',
+  raw_after: 'Raw after',
+  raw_before: 'Raw before',
+  key_view: 'Analysis',
+};
 
 function setNotice(message, error = false) {
   notice.textContent = message;
@@ -21,6 +28,17 @@ function selected() { return state.layers.find(layer => layer.id === state.selec
 function escaped(value) { const element = document.createElement('span'); element.textContent = String(value); return element.innerHTML; }
 function isFlagged(layer) { return layer.analysis.status === 'completed' && layer.analysis.severity !== 'none'; }
 function eligible(layer) { return layer.analysis.status === 'completed'; }
+function layerMedia(layer) {
+  const media = Array.isArray(layer.media)
+    ? layer.media.filter(item => item && typeof item.role === 'string' && typeof item.url === 'string')
+    : [];
+  if (media.length) return media;
+  return layer.key_view_url ? [{ role: 'key_view', stage: null, url: layer.key_view_url }] : [];
+}
+function preferredMedia(layer) {
+  const media = layerMedia(layer);
+  return mediaOrder.map(role => media.find(item => item.role === role)).find(Boolean) || media[0] || null;
+}
 
 async function loadSessions() {
   const payload = await api('/api/v1/sessions?limit=100');
@@ -51,7 +69,10 @@ async function loadLayers(reset = true) {
     const payload = await api(`/api/v1/layers?${parameters}`);
     state.layers = reset ? payload.layers : [...payload.layers, ...state.layers];
     state.nextBeforeId = payload.next_before_id;
-    if (reset) state.selectedId = state.layers.at(-1)?.id ?? null;
+    if (reset) {
+      state.selectedId = state.layers.at(-1)?.id ?? null;
+      state.selectedMediaRole = state.layers.length ? preferredMedia(selected())?.role ?? null : null;
+    }
     loadEarlier.hidden = state.nextBeforeId == null;
     setNotice(`${state.layers.length} committed layers loaded. Failed and uncertain layers are not counted as defect-free.`);
     render();
@@ -68,12 +89,18 @@ function renderFilmstrip() {
     const chip = document.createElement('button');
     chip.className = `layer-chip ${layer.id === state.selectedId ? 'selected' : ''}`;
     chip.type = 'button'; chip.role = 'option'; chip.ariaSelected = String(layer.id === state.selectedId);
-    chip.innerHTML = layer.key_view_url
-      ? `<img loading="lazy" src="${layer.key_view_url}" alt="Layer ${layer.index} key view">`
+    const preview = preferredMedia(layer);
+    chip.innerHTML = preview
+      ? `<img loading="lazy" src="${preview.url}" alt="Layer ${layer.index} evidence preview">`
       : '<div class="chip-missing">NO KEY VIEW</div>';
     const severity = escaped(layer.analysis.severity || 'unknown');
     chip.insertAdjacentHTML('beforeend', `<span class="chip-copy"><b>Layer ${layer.index}</b><span class="severity-${severity}">${severity}</span></span>`);
-    chip.addEventListener('click', () => { state.selectedId = layer.id; render(); chip.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); });
+    chip.addEventListener('click', () => {
+      state.selectedId = layer.id;
+      state.selectedMediaRole = preferredMedia(layer)?.role ?? null;
+      render();
+      chip.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    });
     filmstrip.append(chip);
   }
 }
@@ -82,9 +109,37 @@ function renderSelected() {
   const layer = selected();
   const wrap = document.querySelector('#image-wrap'); const facts = document.querySelector('#layer-facts');
   const title = document.querySelector('#layer-title'); const argon = document.querySelector('#argon-state');
-  if (!layer) { wrap.innerHTML = '<p>No layer data.</p>'; facts.innerHTML = ''; title.textContent = 'No layer'; argon.textContent = 'Argon context unavailable.'; return; }
+  const selector = document.querySelector('#evidence-selector'); const caption = document.querySelector('#frame-caption');
+  if (!layer) {
+    wrap.innerHTML = '<p>No layer data.</p>'; selector.replaceChildren(); caption.textContent = 'No evidence selected.';
+    facts.innerHTML = ''; title.textContent = 'No layer'; argon.textContent = 'Argon context unavailable.'; return;
+  }
   title.textContent = `Layer ${layer.index}`;
-  wrap.innerHTML = layer.key_view_url ? `<img src="${layer.key_view_url}" alt="Selected layer ${layer.index} key view">` : '<p>Key view unavailable for this result.</p>';
+  const media = layerMedia(layer).sort((left, right) => mediaOrder.indexOf(left.role) - mediaOrder.indexOf(right.role));
+  const current = media.find(item => item.role === state.selectedMediaRole) || preferredMedia(layer);
+  state.selectedMediaRole = current?.role ?? null;
+  selector.replaceChildren();
+  for (const item of media) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = item.role === state.selectedMediaRole ? 'selected' : '';
+    button.setAttribute('aria-pressed', String(item.role === state.selectedMediaRole));
+    button.textContent = mediaLabels[item.role] || item.role;
+    button.addEventListener('click', () => { state.selectedMediaRole = item.role; renderSelected(); });
+    selector.append(button);
+  }
+  wrap.replaceChildren();
+  if (current) {
+    const image = document.createElement('img');
+    image.src = current.url;
+    image.alt = `Layer ${layer.index} ${mediaLabels[current.role] || current.role}`;
+    wrap.append(image);
+    const dimensions = current.width && current.height ? `${current.width} x ${current.height}` : 'dimensions unavailable';
+    caption.textContent = `${mediaLabels[current.role] || current.role} / ${dimensions}${current.stage ? ` / ${current.stage}` : ''}`;
+  } else {
+    wrap.innerHTML = '<p>No review image was published for this result.</p>';
+    caption.textContent = 'Raw and diagnostic evidence unavailable.';
+  }
   const values = [['Captured', new Date(layer.captured_at).toLocaleString()], ['Status', layer.analysis.status], ['Severity', layer.analysis.severity], ['State', layer.analysis.state], ['Confidence', numeric(layer.analysis.confidence)], ['Deficit area', percent(layer.analysis.deficit_area_frac)]];
   facts.innerHTML = values.map(([key, value]) => `<dt>${escaped(key)}</dt><dd>${escaped(value ?? 'unknown')}</dd>`).join('');
   const channels = layer.argon_snapshot.channels || [];

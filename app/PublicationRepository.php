@@ -59,10 +59,11 @@ final class PublicationRepository
             foreach ($manifest->media as $media) {
                 $link = $this->database->prepare(
                     'INSERT INTO publication_media (publication_id, role, media_sha256, media_type, width, height)
-                     VALUES (:publication_id, \'key_view\', :media_sha256, :media_type, :width, :height)'
+                     VALUES (:publication_id, :role, :media_sha256, :media_type, :width, :height)'
                 );
                 $link->execute([
                     'publication_id' => $publicationId,
+                    'role' => $media->role,
                     'media_sha256' => $media->sha256,
                     'media_type' => $media->mediaType,
                     'width' => $media->width,

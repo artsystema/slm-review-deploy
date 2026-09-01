@@ -10,6 +10,8 @@ use DateTimeInterface;
 final class ValidatedMedia
 {
     public function __construct(
+        public readonly string $role,
+        public readonly string $path,
         public readonly string $sha256,
         public readonly string $mediaType,
         public readonly int $width,
@@ -108,13 +110,31 @@ final class ManifestValidator
         if (!is_array($manifest['media']) || !array_is_list($manifest['media'])) {
             throw new HttpError(422, 'media must be an array');
         }
+        if (count($manifest['media']) > 3) {
+            throw new HttpError(422, 'a layer bundle may declare at most three media items');
+        }
+        $mediaPaths = [
+            'key_view' => 'key-view.jpg',
+            'raw_before' => 'raw-before.jpg',
+            'raw_after' => 'raw-after.jpg',
+            'diagnostic_overlay' => 'diagnostic-overlay.jpg',
+        ];
         $media = [];
+        $roles = [];
+        $paths = [];
         foreach ($manifest['media'] as $index => $item) {
             $entry = self::object($item, "media[{$index}]");
             self::exactKeys($entry, ['role', 'stage', 'path', 'media_type', 'sha256', 'width', 'height'], "media[{$index}]");
-            if ($entry['role'] !== 'key_view' || $entry['path'] !== 'key-view.jpg' || $entry['media_type'] !== 'image/jpeg') {
-                throw new HttpError(422, 'only image/jpeg key-view.jpg media is supported');
+            $role = self::string($entry['role'], "media[{$index}].role", 50);
+            $path = self::string($entry['path'], "media[{$index}].path", 100);
+            if (!isset($mediaPaths[$role]) || $path !== $mediaPaths[$role] || $entry['media_type'] !== 'image/jpeg') {
+                throw new HttpError(422, 'media role, path, or type is unsupported');
             }
+            if (isset($roles[$role]) || isset($paths[$path])) {
+                throw new HttpError(422, 'media roles and paths must be unique');
+            }
+            $roles[$role] = true;
+            $paths[$path] = true;
             if ($entry['stage'] !== null && !is_string($entry['stage'])) {
                 throw new HttpError(422, 'media stage must be a string or null');
             }
@@ -123,13 +143,16 @@ final class ManifestValidator
                 throw new HttpError(422, 'media sha256 is invalid');
             }
             $media[] = new ValidatedMedia(
+                $role,
+                $path,
                 $sha256,
                 'image/jpeg',
                 self::positiveInt($entry['width'], "media[{$index}].width"),
                 self::positiveInt($entry['height'], "media[{$index}].height"),
             );
         }
-        if (($keyViewState === 'available' && count($media) !== 1) || ($keyViewState === 'unavailable' && $media !== [])) {
+        $hasKeyView = isset($roles['key_view']) || isset($roles['diagnostic_overlay']);
+        if (($keyViewState === 'available') !== $hasKeyView) {
             throw new HttpError(422, 'key view state and declared media disagree');
         }
 

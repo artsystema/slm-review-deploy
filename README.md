@@ -73,9 +73,9 @@ agent URL to the full base path, for example
 1. Visit `/` and confirm the browser requests the Directory Privacy password.
 2. Run the agent with `--once`; its JSON output should show `committed: 1` for
    a new bundle, then `attempted: 0` on the next pass.
-3. Refresh the viewer. Select the session, scrub frames, and confirm the
-   selected frame's index, verdict, defect chart point, and argon snapshot
-   match the local manifest.
+3. Refresh the viewer. Select the session, scrub frames, switch among Analysis,
+   Raw after, and Raw before, and confirm the index, verdict, defect chart
+   point, and argon snapshot match the local manifest.
 4. Stop the server during a pass or temporarily use an invalid URL. Confirm
    the monitor continues normally and the agent reports a retry/backlog.
 5. Restore the URL and run `--once`; confirm no duplicate remote layer appears.
@@ -93,4 +93,5 @@ remote-review/
 Media objects are stored outside the web root and are served only through the
 read API after the cPanel directory protection challenge. They are deduplicated
 by SHA-256. The original manifest JSON is retained together with normalized
-fields; no raw printer image is accepted by this service.
+fields. The service accepts only the fixed raw-before, raw-after, diagnostic
+overlay, and legacy key-view roles declared by the bundle contract.

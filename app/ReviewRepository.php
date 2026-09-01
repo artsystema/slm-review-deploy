@@ -42,9 +42,8 @@ final class ReviewRepository
     ): array
     {
         $sql = 'SELECT p.id, p.layer_index, p.captured_at, p.analysis_status, p.severity, p.analysis_state,
-                       p.key_view_state, p.manifest_json, pm.media_sha256
+                       p.key_view_state, p.manifest_json
                 FROM publications p
-                LEFT JOIN publication_media pm ON pm.publication_id = p.id AND pm.role = \'key_view\'
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id';
         if ($unassigned) {
             $sql .= ' AND p.session_local_id IS NULL';
@@ -68,6 +67,24 @@ final class ReviewRepository
         $rows = [];
         foreach ($statement->fetchAll() as $row) {
             $manifest = json_decode($row['manifest_json'], true, 512, JSON_THROW_ON_ERROR);
+            $media = [];
+            $mediaByRole = [];
+            foreach ($manifest['media'] as $item) {
+                $entry = [
+                    'role' => $item['role'],
+                    'stage' => $item['stage'],
+                    'url' => $basePath . '/api/v1/media/' . $item['sha256'],
+                    'width' => $item['width'],
+                    'height' => $item['height'],
+                ];
+                $media[] = $entry;
+                $mediaByRole[$item['role']] = $entry;
+            }
+            $keyView = $mediaByRole['diagnostic_overlay']
+                ?? $mediaByRole['key_view']
+                ?? $mediaByRole['raw_after']
+                ?? $mediaByRole['raw_before']
+                ?? null;
             $rows[] = [
                 'id' => (int) $row['id'],
                 'index' => (int) $row['layer_index'],
@@ -75,9 +92,8 @@ final class ReviewRepository
                 'analysis' => $manifest['analysis'],
                 'argon_snapshot' => $manifest['argon_snapshot'],
                 'key_view_state' => $row['key_view_state'],
-                'key_view_url' => $row['media_sha256'] === null
-                    ? null
-                    : $basePath . '/api/v1/media/' . $row['media_sha256'],
+                'key_view_url' => $keyView['url'] ?? null,
+                'media' => $media,
             ];
         }
         return $rows;
