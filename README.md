@@ -71,6 +71,33 @@ If a protected subdirectory is used rather than a dedicated hostname, set the
 agent URL to the full base path, for example
 `https://example.com/slm-review`. The PHP router honours that base path.
 
+## Shareable links
+
+Viewer state lives in the URL fragment, so a link can be pasted into a message
+and it opens on exactly what the sender was looking at. The fragment is used
+rather than a query string so a shared link costs no server round trip and
+cannot collide with the router under a base-path install.
+
+| key | meaning |
+| --- | --- |
+| `m` | monitor instance id |
+| `s` | session local id, or `unassigned` |
+| `live` | `1` follows the newest layer as it arrives |
+| `r` + `l` | run local id and layer index, addressing one frame |
+| `v` | media role, e.g. `diagnostic_overlay`, `underfill_mask` |
+| `grid` | `1` opens the all-views grid |
+
+```
+https://review.example.com/#m=<uuid>&s=22&live=1
+https://review.example.com/#m=<uuid>&s=22&r=33&l=144&v=underfill_mask
+```
+
+A link either follows the build (`live=1`) or pins one frame (`r`+`l`), never
+both: a link copied while following would otherwise silently mean a different
+layer to whoever opened it later. The link button beside the zoom controls
+copies the current state. A frame outside the opening window is paged back to,
+and one that was never published says so rather than showing a neighbour.
+
 ## Manual smoke procedure
 
 1. Visit `/` and confirm the browser requests the Directory Privacy password.

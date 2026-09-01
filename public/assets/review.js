@@ -40,6 +40,7 @@ const timelineCount = el('timeline-count');
 const fillToggle = el('fill-toggle');
 const gridToggle = el('grid-toggle');
 const stageGrid = el('stage-grid');
+const shareLink = el('share-link');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
 const POLL_MIN_MS = 10000;
@@ -292,6 +293,7 @@ function setGrid(showing) {
   gridToggle.setAttribute('aria-pressed', String(showing));
   gridToggle.title = showing ? 'Back to the single view' : 'Show every view at once';
   renderStage();
+  writeHash();
 }
 
 function renderGrid(layer) {
@@ -326,6 +328,115 @@ function setFill(filling) {
   fillToggle.title = filling ? 'Fit the whole frame in the panel' : 'Crop the frame to fill the panel';
 }
 
+// ---------- deep links ----------
+// State lives in the fragment, not the query, so a shared link costs no round
+// trip and cannot collide with the PHP router under a base-path install.
+// A followed session is addressed as `live` rather than by whichever layer
+// happened to be newest when the link was copied.
+
+const MAX_DEEP_LINK_PAGES = 8;
+
+// Opening a shared link runs loads that would each write the hash, overwriting
+// the link before it has been read. Writes are held until the link is applied.
+let applyingHash = window.location.hash.length > 1;
+
+function hashParams() {
+  return new URLSearchParams(window.location.hash.replace(/^#/, ''));
+}
+
+function writeHash() {
+  const chosen = currentSelection();
+  if (chosen === null || applyingHash) return;
+  const parameters = new URLSearchParams();
+  parameters.set('m', chosen.monitor);
+  parameters.set('s', chosen.session === null ? 'unassigned' : String(chosen.session));
+  if (state.follow) {
+    parameters.set('live', '1');
+  } else {
+    const layer = selected();
+    if (layer) {
+      parameters.set('r', String(layer.run_local_id));
+      parameters.set('l', String(layer.index));
+    }
+  }
+  if (state.selectedMediaRole) parameters.set('v', state.selectedMediaRole);
+  if (state.grid) parameters.set('grid', '1');
+  const next = `#${parameters}`;
+  // replaceState does not fire hashchange, so this never re-enters applyHash.
+  if (next !== window.location.hash) history.replaceState(null, '', next);
+}
+
+/** Select the session a link names, comparing parsed values rather than
+ *  rebuilt JSON: the session id's type depends on the driver behind the API. */
+function selectSessionFromHash(parameters) {
+  const monitor = parameters.get('m');
+  const session = parameters.get('s');
+  if (!monitor || !session) return false;
+  const option = [...select.options].find(item => {
+    if (!item.value) return false;
+    const chosen = JSON.parse(item.value);
+    return String(chosen.monitor) === monitor
+      && String(chosen.session ?? 'unassigned') === session;
+  });
+  if (!option || select.value === option.value) return Boolean(option);
+  select.value = option.value;
+  return true;
+}
+
+/** Page back until the addressed layer is loaded. A link may point deep into a
+ *  build, and the opening window only holds the newest layers. */
+async function focusHashLayer(parameters) {
+  const run = Number(parameters.get('r'));
+  const index = Number(parameters.get('l'));
+  if (!parameters.get('r') || !parameters.get('l') || !Number.isFinite(run) || !Number.isFinite(index)) {
+    return false;
+  }
+  for (let page = 0; page < MAX_DEEP_LINK_PAGES; page += 1) {
+    const layer = state.layers.find(item => item.run_local_id === run && item.index === index);
+    if (layer) {
+      setFollow(false);
+      activateLayer(layer, false);
+      return true;
+    }
+    if (!state.nextBefore) break;
+    await loadLayers(false);
+  }
+  setNotice(`Layer ${index} of run ${run} is not among the published layers for this session.`, true);
+  return false;
+}
+
+async function applyHash() {
+  const parameters = hashParams();
+  applyingHash = true;
+  try {
+    if (parameters.get('m')) {
+      if (selectSessionFromHash(parameters)) await loadLayers();
+      const role = parameters.get('v');
+      if (role) state.selectedMediaRole = role;
+      await focusHashLayer(parameters);
+      if (parameters.get('grid') === '1') setGrid(true);
+      else { renderSelector(); renderStage(); }
+    }
+  } finally {
+    applyingHash = false;
+  }
+  writeHash();
+}
+
+async function copyShareLink() {
+  writeHash();
+  const url = window.location.href;
+  try {
+    await navigator.clipboard.writeText(url);
+    shareLink.classList.add('is-copied');
+    window.setTimeout(() => shareLink.classList.remove('is-copied'), 1600);
+  } catch {
+    // Clipboard access can be refused; showing the link still lets it be copied.
+    setNotice(url);
+    window.setTimeout(reportCounts, 6000);
+  }
+}
+
 // ---------- data loading ----------
 
 async function loadSessions(preserve = false) {
@@ -350,8 +461,19 @@ async function loadSessions(preserve = false) {
   await loadLayers();
 }
 
+/** The chosen session, or null while the picker still holds its placeholder. */
+function currentSelection() {
+  if (!select.value) return null;
+  try {
+    return JSON.parse(select.value);
+  } catch {
+    return null;
+  }
+}
+
 function sessionParameters() {
-  const chosen = JSON.parse(select.value);
+  const chosen = currentSelection();
+  if (chosen === null) return null;
   const parameters = new URLSearchParams({ monitor_instance_id: chosen.monitor, limit: '250' });
   if (chosen.session === null) parameters.set('unassigned', 'true');
   else parameters.set('session_id', chosen.session);
@@ -371,6 +493,7 @@ async function loadLayers(reset = true) {
   state.loading = true;
   try {
     const parameters = sessionParameters();
+    if (parameters === null) return;
     if (!reset && state.nextBefore) {
       parameters.set('before_run_local_id', state.nextBefore.run);
       parameters.set('before_layer_index', state.nextBefore.layer);
@@ -401,6 +524,9 @@ async function loadLayers(reset = true) {
     applyStageAspect();
     reportCounts();
     render();
+    // The address bar is the share affordance, so it carries a usable link from
+    // the first load rather than only after the operator touches something.
+    writeHash();
     if (state.selectedId != null) requestAnimationFrame(() => revealLayerChip(state.selectedId, 'auto'));
   } finally {
     // A superseded load must not clear the flag out from under the newer one.
@@ -436,6 +562,7 @@ async function poll() {
   }
   try {
     const parameters = sessionParameters();
+    if (parameters === null) { schedulePoll(POLL_MIN_MS); return; }
     parameters.set('since_id', String(state.latestId));
     const payload = await api(`/api/v1/layers?${parameters}`);
     const added = mergeLayers(payload.layers);
@@ -486,6 +613,7 @@ function setFollow(following) {
     if (last && last.id !== state.selectedId) activateLayer(last, false);
     schedulePoll(500);
   }
+  writeHash();
 }
 
 // ---------- rendering ----------
@@ -511,6 +639,7 @@ function activateLayer(layer, userDriven = true) {
   }
   render();
   revealLayerChip(layer.id, state.scrubbing ? 'auto' : 'smooth');
+  writeHash();
 }
 
 function stepLayer(offset) {
@@ -536,6 +665,7 @@ function renderSelector() {
       state.selectedMediaRole = item.role;
       renderSelector();
       renderStage();
+      writeHash();
     });
     selector.append(button);
   }
@@ -1024,12 +1154,16 @@ function drawLine(context, points, width, height, color, normalise, stepped = fa
 // ---------- wiring ----------
 
 select.addEventListener('change', () => {
+  writeHash();
   loadLayers().then(() => schedulePoll(POLL_MIN_MS)).catch(error => setNotice(error.message, true));
 });
 loadEarlier.addEventListener('click', () => loadLayers(false).catch(error => setNotice(error.message, true)));
 followToggle.addEventListener('click', () => setFollow(!state.follow));
 fillToggle.addEventListener('click', () => setFill(!state.fill));
 gridToggle.addEventListener('click', () => setGrid(!state.grid));
+shareLink.addEventListener('click', () => { copyShareLink().catch(() => {}); });
+// A link pasted into the open tab should move the viewer, not reload it.
+window.addEventListener('hashchange', () => { applyHash().catch(error => setNotice(error.message, true)); });
 
 new ResizeObserver(() => renderScrubber()).observe(scrubber);
 
@@ -1065,6 +1199,7 @@ setFill(false);
 setGrid(false);
 applyTransform();
 loadSessions()
+  .then(applyHash)
   .then(() => schedulePoll(POLL_MIN_MS))
   .catch(error => setNotice(`Could not load remote review: ${error.message}`, true));
 // New sessions appear without a reload too, just on a lazier clock than layers.
