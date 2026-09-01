@@ -82,6 +82,41 @@ agent URL to the full base path, for example
    the monitor continues normally and the agent reports a retry/backlog.
 5. Restore the URL and run `--once`; confirm no duplicate remote layer appears.
 
+## cPanel Git deployment
+
+Do not clone the full `slm-monitor` repository into shared hosting. Its tracked
+datasets and history are much larger than the remote application. Publish the
+`remote-review/` subtree to a dedicated deployment repository instead; in that
+repository this directory's `.cpanel.yml` becomes the top-level deployment
+manifest required by cPanel.
+
+After creating an empty deployment repository on GitHub, publish the subtree
+from the monitor checkout:
+
+```powershell
+.\remote-review\tools\publish-deploy-repo.ps1 `
+  -RepositoryUrl https://github.com/artsystema/slm-review-deploy.git
+```
+
+In cPanel **Git Version Control**, clone the dedicated repository into a new
+private path such as `slm-review-git`. Keep the production directories separate
+from the clone. On **Pull or Deploy**, first choose **Update from Remote**, then
+**Deploy HEAD Commit**. cPanel requires a clean checkout and runs the checked-in
+tasks in order.
+
+The deployment manifest copies only `app/`, `migrations/`, `public/index.php`,
+and `public/assets/`. It verifies that the existing private configuration and
+public app-root file are present, then leaves these operator-owned paths alone:
+
+- `slm-review/private/config.php`
+- `slm-review-storage/`
+- `slm.artsystema.com/app-root.php`
+- `slm.artsystema.com/.htaccess`
+
+Leaving `.htaccess` out is deliberate: cPanel Directory Privacy writes its
+authentication directives there. Database migrations are copied for review but
+are never executed automatically.
+
 ## Layout
 
 ```text
