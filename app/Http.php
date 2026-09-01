@@ -60,7 +60,12 @@ final class Request
 
     public function header(string $name): ?string
     {
-        $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+        $normalized = strtoupper(str_replace('-', '_', $name));
+        // PHP exposes these CGI headers without the usual HTTP_ prefix.
+        $key = match ($normalized) {
+            'CONTENT_TYPE', 'CONTENT_LENGTH' => $normalized,
+            default => 'HTTP_' . $normalized,
+        };
         $value = $this->server[$key] ?? null;
         return is_string($value) ? $value : null;
     }
