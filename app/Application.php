@@ -254,7 +254,11 @@ final class Application
               <img id="stage-image" class="stage-image" alt="" draggable="false">
             </div>
             <p id="stage-empty" class="stage-empty">No frame selected.</p>
-            <div class="stage-controls" role="group" aria-label="Zoom">
+            <div class="stage-controls" role="group" aria-label="View controls">
+              <button id="fill-toggle" class="fill-toggle" type="button" aria-pressed="false" aria-label="Fill the panel">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M5 6.5h6M5 9.5h6"/></svg>
+              </button>
+              <span class="stage-controls-divider" aria-hidden="true"></span>
               <button id="zoom-out" type="button" aria-label="Zoom out">&minus;</button>
               <button id="zoom-reset" type="button" aria-label="Reset zoom">1&times;</button>
               <button id="zoom-in" type="button" aria-label="Zoom in">+</button>

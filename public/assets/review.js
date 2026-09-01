@@ -12,6 +12,7 @@ const state = {
   pollDelay: 0,
   pollTimer: null,
   unseen: 0,
+  fill: false,
 };
 
 // Zoom and pan survive both layer and view changes on purpose: the whole point
@@ -35,6 +36,7 @@ const scrubCanvas = el('scrub-canvas');
 const playhead = el('scrub-playhead');
 const bubble = el('scrub-bubble');
 const timelineCount = el('timeline-count');
+const fillToggle = el('fill-toggle');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
 const POLL_MIN_MS = 10000;
@@ -69,13 +71,14 @@ const mediaLabels = {
 };
 const channelColors = ['#4fc3c8', '#e0a63a', '#b57af2', '#ef718a'];
 const severityColors = {
-  none: '#3fb96f',
-  clear: '#3fb96f',
+  none: '#2f5b46',
+  clear: '#2f5b46',
   info: '#4da3ff',
   warning: '#e0a63a',
   critical: '#e0523a',
   emergency: '#e0523a',
 };
+const quietSeverities = new Set(['none', 'clear']);
 
 // ---------- helpers ----------
 
@@ -279,6 +282,13 @@ function zoomAt(nextScale, clientX, clientY) {
 
 function resetZoom() { view.scale = 1; view.x = 0; view.y = 0; applyTransform(); }
 
+function setFill(filling) {
+  state.fill = filling;
+  stage.classList.toggle('is-filled', filling);
+  fillToggle.setAttribute('aria-pressed', String(filling));
+  fillToggle.title = filling ? 'Fit the whole frame in the panel' : 'Crop the frame to fill the panel';
+}
+
 // ---------- data loading ----------
 
 async function loadSessions(preserve = false) {
@@ -395,6 +405,7 @@ async function poll() {
         state.unseen += added;
         render();
       }
+      updateFollowLabel();
     }
     // Recovering from a failed poll has to clear the error text, not just its
     // styling, even on a tick that brought nothing new.
@@ -407,12 +418,22 @@ async function poll() {
   }
 }
 
+function updateFollowLabel() {
+  const label = state.follow
+    ? 'Live'
+    : state.unseen
+      ? `${state.unseen} new`
+      : 'Paused';
+  followToggle.querySelector('.follow-text').textContent = label;
+  followToggle.classList.toggle('has-backlog', !state.follow && state.unseen > 0);
+}
+
 function setFollow(following) {
   state.follow = following;
   if (following) state.unseen = 0;
   followToggle.setAttribute('aria-pressed', String(following));
   followToggle.classList.toggle('is-following', following);
-  followToggle.querySelector('.follow-text').textContent = following ? 'Live' : 'Paused';
+  updateFollowLabel();
   if (following) {
     const last = state.layers.at(-1);
     if (last && last.id !== state.selectedId) activateLayer(last, false);
@@ -436,6 +457,7 @@ function activateLayer(layer, userDriven = true) {
   if (!layer) return;
   state.selectedId = layer.id;
   if (state.layers.at(-1)?.id === layer.id) state.unseen = 0;
+  updateFollowLabel();
   if (userDriven) {
     const isLast = state.layers.at(-1)?.id === layer.id;
     if (state.follow !== isLast) setFollow(isLast);
@@ -470,6 +492,10 @@ function renderSelector() {
     });
     selector.append(button);
   }
+  // Keep the held view reachable: number keys and narrow phones both leave it
+  // outside the visible run of the row.
+  selector.classList.toggle('is-scrollable', selector.scrollWidth > selector.clientWidth + 1);
+  selector.querySelector('button.selected')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
 }
 
 function renderStage() {
@@ -569,7 +595,10 @@ function renderScrubber() {
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, width, height);
 
-  timelineCount.textContent = total ? `${selectedIndex() + 1} / ${total}` : 'no layers';
+  const at = selectedIndex();
+  timelineCount.textContent = total
+    ? `Layer ${state.layers[at]?.index ?? '?'} · ${at + 1} of ${total}`
+    : 'no layers';
   scrubber.setAttribute('aria-valuemax', String(Math.max(0, total - 1)));
   scrubber.setAttribute('aria-valuenow', String(total ? selectedIndex() : 0));
   const current = selected();
@@ -581,15 +610,17 @@ function renderScrubber() {
   // One column per layer, widened to stay visible when a session outruns the
   // pixel budget. Severity is the only thing the strip encodes.
   const columnWidth = Math.max(1, width / total);
+  const barWidth = Math.max(1, columnWidth - (columnWidth > 3 ? 1 : 0));
   for (let index = 0; index < total; index += 1) {
     const layer = state.layers[index];
     const token = severityToken(layer.analysis.severity);
-    const flagged = eligible(layer);
-    context.fillStyle = flagged ? (severityColors[token] || '#8b93a1') : '#3a4150';
-    const x = index * width / total;
-    const barHeight = flagged && token !== 'none' && token !== 'clear' ? height : height * 0.55;
-    context.fillRect(x, (height - barHeight) / 2, Math.max(1, columnWidth - (columnWidth > 3 ? 1 : 0)), barHeight);
+    const quiet = !eligible(layer) || quietSeverities.has(token);
+    context.fillStyle = eligible(layer) ? (severityColors[token] || '#8b93a1') : '#333a47';
+    const barHeight = quiet ? height * 0.42 : height;
+    context.fillRect(x0(index), (height - barHeight) / 2, barWidth, barHeight);
   }
+
+  function x0(index) { return index * width / total; }
   playhead.hidden = false;
   playhead.style.left = `${((selectedIndex() + 0.5) / total) * 100}%`;
 }
@@ -690,7 +721,11 @@ function renderFilmstrip() {
     const deficit = typeof layer.analysis.deficit_area_frac === 'number'
       ? `${percent(layer.analysis.deficit_area_frac)} deficit`
       : layer.analysis.status;
-    chip.insertAdjacentHTML('beforeend', `<span class="chip-copy"><span><b>Layer ${layer.index}</b><span class="severity-label">${escaped(layer.analysis.severity || 'unknown')}</span></span><span class="chip-meta">${escaped(shortStamp(layer.captured_at))} / ${escaped(deficit || 'unknown')}</span></span>`);
+    chip.insertAdjacentHTML('beforeend', `<span class="chip-copy">`
+      + `<span><b>Layer ${layer.index}</b>`
+      + `<span class="severity-label">${escaped(layer.analysis.severity || 'unknown')}</span></span>`
+      + `<span class="chip-meta"><span>${escaped(shortStamp(layer.captured_at))}</span>`
+      + `<span>${escaped(deficit || 'unknown')}</span></span></span>`);
     chip.addEventListener('click', () => activateLayer(layer));
     filmstrip.append(chip);
   }
@@ -940,6 +975,7 @@ select.addEventListener('change', () => {
 });
 loadEarlier.addEventListener('click', () => loadLayers(false).catch(error => setNotice(error.message, true)));
 followToggle.addEventListener('click', () => setFollow(!state.follow));
+fillToggle.addEventListener('click', () => setFill(!state.fill));
 
 new ResizeObserver(() => renderScrubber()).observe(scrubber);
 
@@ -960,6 +996,7 @@ window.addEventListener('keydown', event => {
     return;
   }
   if (event.key === '0') { resetZoom(); return; }
+  if (event.key === 'e' || event.key === 'E') { setFill(!state.fill); return; }
   if (event.key === 'f' || event.key === 'F') { setFollow(!state.follow); return; }
   if (/^[1-9]$/.test(event.key)) {
     const media = layerMedia(selected() || { media: [] });
@@ -969,6 +1006,7 @@ window.addEventListener('keydown', event => {
 });
 
 setFollow(true);
+setFill(false);
 applyTransform();
 loadSessions()
   .then(() => schedulePoll(POLL_MIN_MS))
