@@ -253,8 +253,12 @@ final class Application
             <div id="stage-viewport" class="stage-viewport">
               <img id="stage-image" class="stage-image" alt="" draggable="false">
             </div>
+            <div id="stage-grid" class="stage-grid" role="list" hidden></div>
             <p id="stage-empty" class="stage-empty">No frame selected.</p>
             <div class="stage-controls" role="group" aria-label="View controls">
+              <button id="grid-toggle" class="grid-toggle" type="button" aria-pressed="false" aria-label="Show every view at once">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+              </button>
               <button id="fill-toggle" class="fill-toggle" type="button" aria-pressed="false" aria-label="Fill the panel">
                 <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M5 6.5h6M5 9.5h6"/></svg>
               </button>

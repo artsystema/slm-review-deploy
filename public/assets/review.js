@@ -13,6 +13,7 @@ const state = {
   pollTimer: null,
   unseen: 0,
   fill: false,
+  grid: false,
 };
 
 // Zoom and pan survive both layer and view changes on purpose: the whole point
@@ -37,6 +38,8 @@ const playhead = el('scrub-playhead');
 const bubble = el('scrub-bubble');
 const timelineCount = el('timeline-count');
 const fillToggle = el('fill-toggle');
+const gridToggle = el('grid-toggle');
+const stageGrid = el('stage-grid');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
 const POLL_MIN_MS = 10000;
@@ -282,6 +285,40 @@ function zoomAt(nextScale, clientX, clientY) {
 
 function resetZoom() { view.scale = 1; view.x = 0; view.y = 0; applyTransform(); }
 
+function setGrid(showing) {
+  state.grid = showing;
+  stage.classList.toggle('is-grid', showing);
+  stageGrid.hidden = !showing;
+  gridToggle.setAttribute('aria-pressed', String(showing));
+  gridToggle.title = showing ? 'Back to the single view' : 'Show every view at once';
+  renderStage();
+}
+
+function renderGrid(layer) {
+  stageGrid.replaceChildren();
+  const media = layerMedia(layer);
+  for (const item of media) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = `grid-tile ${item.role === state.selectedMediaRole ? 'is-current' : ''}`;
+    tile.setAttribute('role', 'listitem');
+    const image = document.createElement('img');
+    image.loading = 'lazy';
+    image.src = item.url;
+    image.alt = `Layer ${layer.index} ${mediaLabels[item.role] || item.role}`;
+    const label = document.createElement('span');
+    label.textContent = mediaLabels[item.role] || item.role;
+    tile.append(image, label);
+    // Tapping a tile is how you go from comparing to inspecting.
+    tile.addEventListener('click', () => {
+      state.selectedMediaRole = item.role;
+      setGrid(false);
+      renderSelector();
+    });
+    stageGrid.append(tile);
+  }
+}
+
 function setFill(filling) {
   state.fill = filling;
   stage.classList.toggle('is-filled', filling);
@@ -321,8 +358,16 @@ function sessionParameters() {
   return parameters;
 }
 
+// Selecting a session while the previous load is still in flight used to be
+// dropped by the in-flight guard: the picker moved, the layers did not, and the
+// viewer showed one session's frames under another's name. A reset always
+// supersedes, and a superseded response is discarded when it lands.
+let loadToken = 0;
+
 async function loadLayers(reset = true) {
-  if (!select.value || state.loading) return;
+  if (!select.value) return;
+  if (!reset && state.loading) return;
+  const token = ++loadToken;
   state.loading = true;
   try {
     const parameters = sessionParameters();
@@ -332,6 +377,7 @@ async function loadLayers(reset = true) {
       parameters.set('before_id', state.nextBefore.id);
     }
     const payload = await api(`/api/v1/layers?${parameters}`);
+    if (token !== loadToken) return;
     if (reset) {
       state.layers = [];
       state.stageAspect = null;
@@ -357,7 +403,8 @@ async function loadLayers(reset = true) {
     render();
     if (state.selectedId != null) requestAnimationFrame(() => revealLayerChip(state.selectedId, 'auto'));
   } finally {
-    state.loading = false;
+    // A superseded load must not clear the flag out from under the newer one.
+    if (token === loadToken) state.loading = false;
   }
 }
 
@@ -517,12 +564,18 @@ function renderStage() {
     return;
   }
   stageEmpty.hidden = true;
+  stageHint.textContent = `Layer ${layer.index}`;
+  if (state.grid) {
+    renderGrid(layer);
+    const views = layerMedia(layer).length;
+    caption.textContent = `All views / ${views} view${views === 1 ? '' : 's'} / layer ${layer.index}`;
+    return;
+  }
   stageImage.alt = `Layer ${layer.index} ${mediaLabels[current.role] || current.role}`;
   showImage(current.url);
   prefetchAround(selectedIndex());
   const dimensions = current.width && current.height ? `${current.width} x ${current.height}` : 'dimensions unavailable';
   caption.textContent = `${mediaLabels[current.role] || current.role} / ${dimensions}${current.stage ? ` / ${current.stage}` : ''}`;
-  stageHint.textContent = `Layer ${layer.index}`;
 }
 
 function renderSidebar() {
@@ -976,6 +1029,7 @@ select.addEventListener('change', () => {
 loadEarlier.addEventListener('click', () => loadLayers(false).catch(error => setNotice(error.message, true)));
 followToggle.addEventListener('click', () => setFollow(!state.follow));
 fillToggle.addEventListener('click', () => setFill(!state.fill));
+gridToggle.addEventListener('click', () => setGrid(!state.grid));
 
 new ResizeObserver(() => renderScrubber()).observe(scrubber);
 
@@ -997,6 +1051,7 @@ window.addEventListener('keydown', event => {
   }
   if (event.key === '0') { resetZoom(); return; }
   if (event.key === 'e' || event.key === 'E') { setFill(!state.fill); return; }
+  if (event.key === 'g' || event.key === 'G') { setGrid(!state.grid); return; }
   if (event.key === 'f' || event.key === 'F') { setFollow(!state.follow); return; }
   if (/^[1-9]$/.test(event.key)) {
     const media = layerMedia(selected() || { media: [] });
@@ -1007,6 +1062,7 @@ window.addEventListener('keydown', event => {
 
 setFollow(true);
 setFill(false);
+setGrid(false);
 applyTransform();
 loadSessions()
   .then(() => schedulePoll(POLL_MIN_MS))

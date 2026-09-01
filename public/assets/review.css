@@ -352,6 +352,75 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   100% { transform: translateX(100%); }
 }
 
+.stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 6px;
+  padding: 8px;
+}
+
+.stage-grid[hidden] { display: none; }
+
+.grid-tile {
+  position: relative;
+  aspect-ratio: var(--stage-aspect, 4 / 3);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0b0e13;
+  cursor: pointer;
+  transition: border-color 120ms ease-out;
+}
+
+.grid-tile:hover { border-color: var(--border-strong); }
+.grid-tile.is-current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.grid-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.grid-tile span {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  left: 5px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgb(11 14 19 / 78%);
+  color: rgb(255 255 255 / 88%);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The grid is a mode, not a view, so it is allowed its own height. */
+.stage.is-grid { aspect-ratio: auto; max-height: none; }
+.stage.is-grid .stage-viewport,
+.stage.is-grid .stage-hint { display: none; }
+.stage.is-grid .fill-toggle,
+.stage.is-grid #zoom-in,
+.stage.is-grid #zoom-out,
+.stage.is-grid #zoom-reset,
+.stage.is-grid .stage-controls-divider { display: none; }
+
+.grid-toggle svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  vertical-align: -2px;
+}
+
+.grid-toggle[aria-pressed="true"] { background: var(--panel-2); color: var(--accent); }
+
 .stage-empty {
   position: absolute;
   inset: 0;
