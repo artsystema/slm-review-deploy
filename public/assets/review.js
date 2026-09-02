@@ -46,7 +46,10 @@ const POLL_MIN_MS = 10000;
 const POLL_MAX_MS = 60000;
 const MAX_SCALE = 8;
 const PREFETCH_RADIUS = 6;
-const SCRUB_HAPTIC_MS = 8;
+// Short enough to read as a tick, long enough that the motor actually renders
+// it: an 8 ms pulse is below the spin-up time of most phone vibrators and is
+// felt as nothing.
+const SCRUB_HAPTIC_MS = 20;
 const SCRUB_HAPTIC_INTERVAL_MS = 40;
 
 // Toggle order reads as a pipeline: what the camera saw, then the verdict, then
@@ -835,16 +838,22 @@ function tickScrubber(pointerType) {
     || typeof navigator.vibrate !== 'function') return;
   const now = performance.now();
   if (now - lastScrubHapticAt < SCRUB_HAPTIC_INTERVAL_MS) return;
+  lastScrubHapticAt = now;
+  // Call it straight from the pointer handler, not a deferred callback: the
+  // Vibration API is gated on the page having been activated by a gesture, and
+  // a call made inside requestAnimationFrame has tripped that check on some
+  // Chrome builds. vibrate() returns false rather than throwing when the
+  // platform declines (no motor, battery saver, permission) -- nothing to do
+  // about that here, but the try/catch stays for engines that do throw.
   try {
     navigator.vibrate(SCRUB_HAPTIC_MS);
-    lastScrubHapticAt = now;
   } catch {
     // Some browsers expose the API but reject vibration in the current context.
   }
 }
 
-function scrubTo(index, clientX, pointerType) {
-  scrubTarget = { index, clientX, pointerType };
+function scrubTo(index, clientX) {
+  scrubTarget = { index, clientX };
   if (scrubFrame) return;
   scrubFrame = requestAnimationFrame(() => {
     scrubFrame = 0;
@@ -854,7 +863,6 @@ function scrubTo(index, clientX, pointerType) {
     showBubble(target.index, target.clientX);
     if (layer && layer.id !== state.selectedId) {
       state.selectedId = layer.id;
-      tickScrubber(target.pointerType);
       // Only the parts that change per frame; the sidebar and charts follow on
       // release so a fast drag is not re-laying out the whole page each frame.
       renderStage();
@@ -873,7 +881,9 @@ scrubber.addEventListener('pointerdown', event => {
   // so the slider is focused explicitly and keeps its arrow-key stepping.
   event.preventDefault();
   scrubber.focus({ preventScroll: true });
-  scrubTo(indexFromPointer(event.clientX), event.clientX, event.pointerType);
+  const index = indexFromPointer(event.clientX);
+  if (index !== selectedIndex()) tickScrubber(event.pointerType);
+  scrubTo(index, event.clientX);
 });
 
 scrubber.addEventListener('pointermove', event => {
@@ -882,7 +892,12 @@ scrubber.addEventListener('pointermove', event => {
     return;
   }
   event.preventDefault();
-  scrubTo(indexFromPointer(event.clientX), event.clientX, event.pointerType);
+  const index = indexFromPointer(event.clientX);
+  // Against the last committed selection, not the pending one: the visual
+  // update is throttled to one per frame, but a fast drag still crosses layer
+  // boundaries between frames and each one should tick (rate-limited inside).
+  if (index !== selectedIndex()) tickScrubber(event.pointerType);
+  scrubTo(index, event.clientX);
 });
 
 function endScrub(event) {
