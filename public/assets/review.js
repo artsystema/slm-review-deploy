@@ -46,6 +46,8 @@ const POLL_MIN_MS = 10000;
 const POLL_MAX_MS = 60000;
 const MAX_SCALE = 8;
 const PREFETCH_RADIUS = 6;
+const SCRUB_HAPTIC_MS = 8;
+const SCRUB_HAPTIC_INTERVAL_MS = 40;
 
 // Toggle order reads as a pipeline: what the camera saw, then the verdict, then
 // the intermediate evidence behind it.
@@ -825,9 +827,24 @@ function showBubble(index, clientX) {
 
 let scrubFrame = 0;
 let scrubTarget = null;
+let lastScrubHapticAt = -Infinity;
 
-function scrubTo(index, clientX) {
-  scrubTarget = { index, clientX };
+function tickScrubber(pointerType) {
+  if (pointerType !== 'touch'
+    || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    || typeof navigator.vibrate !== 'function') return;
+  const now = performance.now();
+  if (now - lastScrubHapticAt < SCRUB_HAPTIC_INTERVAL_MS) return;
+  try {
+    navigator.vibrate(SCRUB_HAPTIC_MS);
+    lastScrubHapticAt = now;
+  } catch {
+    // Some browsers expose the API but reject vibration in the current context.
+  }
+}
+
+function scrubTo(index, clientX, pointerType) {
+  scrubTarget = { index, clientX, pointerType };
   if (scrubFrame) return;
   scrubFrame = requestAnimationFrame(() => {
     scrubFrame = 0;
@@ -837,6 +854,7 @@ function scrubTo(index, clientX) {
     showBubble(target.index, target.clientX);
     if (layer && layer.id !== state.selectedId) {
       state.selectedId = layer.id;
+      tickScrubber(target.pointerType);
       // Only the parts that change per frame; the sidebar and charts follow on
       // release so a fast drag is not re-laying out the whole page each frame.
       renderStage();
@@ -855,7 +873,7 @@ scrubber.addEventListener('pointerdown', event => {
   // so the slider is focused explicitly and keeps its arrow-key stepping.
   event.preventDefault();
   scrubber.focus({ preventScroll: true });
-  scrubTo(indexFromPointer(event.clientX), event.clientX);
+  scrubTo(indexFromPointer(event.clientX), event.clientX, event.pointerType);
 });
 
 scrubber.addEventListener('pointermove', event => {
@@ -864,7 +882,7 @@ scrubber.addEventListener('pointermove', event => {
     return;
   }
   event.preventDefault();
-  scrubTo(indexFromPointer(event.clientX), event.clientX);
+  scrubTo(indexFromPointer(event.clientX), event.clientX, event.pointerType);
 });
 
 function endScrub(event) {

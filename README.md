@@ -116,6 +116,8 @@ does not bury the back button.
    viewer behaviours the operator depends on:
    - Press and drag along the timeline directly under the image; frames follow
      the finger and the bubble names the layer being passed.
+       Supported touch devices provide a light tick as the selected layer changes;
+       unsupported browsers and reduced-motion sessions remain silent.
    - Switch among Before, After, Analysis and the detector views. The frame
      must not change size or position between them.
    - Pinch or double-tap to zoom, drag to pan, and confirm the zoom is held
