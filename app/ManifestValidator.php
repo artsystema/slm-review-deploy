@@ -26,6 +26,7 @@ final class ValidatedManifest
     public function __construct(
         public readonly string $publicationKey,
         public readonly string $monitorInstanceId,
+        public readonly string $monitorSoftwareVersion,
         public readonly ?int $sessionLocalId,
         public readonly ?string $sessionName,
         public readonly string $sessionState,
@@ -61,10 +62,10 @@ final class ManifestValidator
         $monitor = self::object($manifest['monitor'], 'monitor');
         self::exactKeys($monitor, ['instance_id', 'software_version'], 'monitor');
         $monitorId = self::string($monitor['instance_id'], 'monitor.instance_id', 36);
+        $monitorVersion = self::string($monitor['software_version'], 'monitor.software_version', 100);
         if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/Di', $monitorId) !== 1) {
             throw new HttpError(422, 'monitor.instance_id must be a UUID');
         }
-        self::string($monitor['software_version'], 'monitor.software_version', 100);
 
         $session = self::object($manifest['session'], 'session');
         self::exactKeys($session, ['local_id', 'name', 'state'], 'session');
@@ -162,8 +163,9 @@ final class ManifestValidator
         }
 
         return new ValidatedManifest(
-            $key, $monitorId, $sessionId, $sessionName, $sessionState, $runId, $analysisId,
-            $layerIndex, $capturedAt, $status, $severity, $state, $keyViewState, $media,
+            $key, $monitorId, $monitorVersion, $sessionId, $sessionName, $sessionState, $runId,
+            $analysisId, $layerIndex, $capturedAt, $status, $severity, $state, $keyViewState,
+            $media,
         );
     }
 

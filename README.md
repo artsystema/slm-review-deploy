@@ -54,9 +54,12 @@ paths are examples only; substitute the cPanel account's actual home path.
    `config.example.php`, with a generated ingest token and a private storage
    path such as `/home/CPANEL_USER/slm-review-storage`.
 4. Import `migrations/001_initial.sql`, then `migrations/002_build_order.sql`,
-   with phpMyAdmin into the new database. The second migration adds the index
-   behind the build-ordered timeline and is required when upgrading an
-   existing install.
+   then `migrations/003_monitor_version.sql`, with phpMyAdmin into the new
+   database. Both later migrations are required when upgrading an existing
+   install: 002 adds the index behind the build-ordered timeline, and 003
+   records which monitor build published each layer, backfilling history from
+   the manifests already stored. Without 003 the ingest endpoint rejects every
+   upload, because it writes a column that does not exist yet.
 5. Upload the contents of `public/` to the hostname document root. Copy
    `public/app-root.example.php` to `public/app-root.php` and set its returned
    string to `/home/CPANEL_USER/slm-review`. Never upload `private/config.php`
@@ -149,6 +152,13 @@ private path such as `slm-review-git`. Keep the production directories separate
 from the clone. On **Pull or Deploy**, first choose **Update from Remote**, then
 **Deploy HEAD Commit**. cPanel requires a clean checkout and runs the checked-in
 tasks in order.
+
+**Import any new migration before deploying the code that needs it.** Migrations
+are never run automatically (see below), so a deploy that expects a column the
+database does not have yet fails every ingest until the SQL is imported — the
+uploads are retried rather than lost, but the reviewer stops receiving layers in
+the meantime. `003_monitor_version.sql` is one of these: the code deployed with
+it writes `publications.monitor_software_version`.
 
 This GoDaddy account keeps the SLM production folders below `public_html`, so
 the checked-in deployment targets are:

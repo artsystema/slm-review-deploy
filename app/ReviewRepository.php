@@ -114,7 +114,7 @@ final class ReviewRepository
     private function selectClause(): string
     {
         return 'SELECT p.id, p.run_local_id, p.layer_index, p.captured_at, p.analysis_status, p.severity,
-                       p.analysis_state, p.key_view_state, p.manifest_json
+                       p.analysis_state, p.key_view_state, p.monitor_software_version, p.manifest_json
                 FROM publications p
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id';
     }
@@ -173,6 +173,10 @@ final class ReviewRepository
                 'argon_snapshot' => $manifest['argon_snapshot'],
                 'key_view_state' => $row['key_view_state'],
                 'key_view_url' => $keyView['url'] ?? null,
+                // Which build published this layer. Null for rows written
+                // before the column existed and whose manifest could not be
+                // parsed by the backfill.
+                'monitor_software_version' => $row['monitor_software_version'] ?? null,
                 'media' => $media,
             ];
         }

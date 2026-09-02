@@ -724,6 +724,11 @@ function renderSidebar() {
     ['Processor', layer.run ? `${layer.run.processor} ${layer.run.processor_version}` : 'unknown'],
     ['Rules', layer.run?.rules_version || 'unknown'],
     ['Profile', layer.run?.profile_name || 'unknown'],
+    // Which build published this layer. Two monitors feeding the same reviewer
+    // are otherwise indistinguishable, and a stale one shows up only as fewer
+    // views than expected -- which reads as a fault in this page rather than in
+    // the machine that sent the bundle.
+    ['Monitor build', layer.monitor_software_version || 'unknown'],
   ];
   facts.innerHTML = values.map(([key, value]) => `<dt>${escaped(key)}</dt><dd>${escaped(value ?? 'unknown')}</dd>`).join('');
   const channels = layer.argon_snapshot.channels || [];

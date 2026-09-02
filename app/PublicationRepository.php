@@ -29,11 +29,13 @@ final class PublicationRepository
             }
             $statement = $this->database->prepare(
                 'INSERT INTO publications (
-                    publication_key, monitor_instance_id, session_local_id, session_name, session_state,
+                    publication_key, monitor_instance_id, monitor_software_version,
+                    session_local_id, session_name, session_state,
                     run_local_id, layer_analysis_id, layer_index, captured_at, analysis_status, severity,
                     analysis_state, key_view_state, manifest_sha256, manifest_json, status
                 ) VALUES (
-                    :publication_key, :monitor_instance_id, :session_local_id, :session_name, :session_state,
+                    :publication_key, :monitor_instance_id, :monitor_software_version,
+                    :session_local_id, :session_name, :session_state,
                     :run_local_id, :layer_analysis_id, :layer_index, :captured_at, :analysis_status, :severity,
                     :analysis_state, :key_view_state, :manifest_sha256, :manifest_json, \'staged\'
                 )'
@@ -41,6 +43,7 @@ final class PublicationRepository
             $statement->execute([
                 'publication_key' => $manifest->publicationKey,
                 'monitor_instance_id' => $manifest->monitorInstanceId,
+                'monitor_software_version' => $manifest->monitorSoftwareVersion,
                 'session_local_id' => $manifest->sessionLocalId,
                 'session_name' => $manifest->sessionName,
                 'session_state' => $manifest->sessionState,
