@@ -54,9 +54,9 @@ const mediaOrder = [
   'raw_after',
   'diagnostic_overlay',
   'key_view',
+  'underfill_residual',
   'renewal_unrenewed',
   'underfill_mask',
-  'underfill_residual',
   'underfill_texture',
   'underfill_baseline',
 ];
