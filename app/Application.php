@@ -289,7 +289,7 @@ final class Application
           <div class="selected-heading"><div><p class="eyebrow">SELECTED LAYER</p><h1 id="layer-title">No layer</h1></div><span id="layer-severity" class="severity-badge severity-unknown">unknown</span></div>
           <p id="analysis-reason" class="analysis-reason">Select a committed layer to inspect its result.</p>
           <dl id="layer-facts"></dl>
-          <section class="argon-panel"><div class="subheading"><span>Argon snapshot</span><strong id="argon-combined">--</strong></div><div id="argon-state" class="argon-state">Argon context unavailable.</div></section>
+          <section class="argon-panel"><div class="subheading"><span>Argon snapshot</span><strong id="argon-combined">--</strong></div><div id="argon-state" class="argon-state">Argon context unavailable.</div><div id="argon-runway" class="argon-runway" data-state="muted">Argon left: --</div></section>
         </aside>
       </section>
       <section class="metrics-grid">

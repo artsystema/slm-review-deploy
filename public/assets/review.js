@@ -46,6 +46,14 @@ const POLL_MIN_MS = 10000;
 const POLL_MAX_MS = 60000;
 const MAX_SCALE = 8;
 const PREFETCH_RADIUS = 6;
+// A rise of at least this much in the combined reserve is a bottle being
+// changed, not the needle wandering. Mirrors the monitor's argon.TANK_CHANGE_RISE.
+const TANK_CHANGE_RISE = 1.0;
+// The runway fit needs a real span to divide by; below this it would turn layer
+// scatter into a dramatic figure. Mirrors argon.MIN_HOURS_FOR_RATE.
+const RUNWAY_MIN_HOURS = 0.25;
+const RUNWAY_MIN_POINTS = 5;
+const RUNWAY_WINDOW = 40;
 // Short enough to read as a tick, long enough that the motor actually renders
 // it: an 8 ms pulse is below the spin-up time of most phone vibrators and is
 // felt as nothing.
@@ -122,6 +130,55 @@ function ageLabel(value) {
   if (value < 1000) return `${Math.round(value)} ms`;
   if (value < 60000) return `${(value / 1000).toFixed(1)} s`;
   return `${Math.round(value / 60000)} min`;
+}
+
+/**
+ * How long the argon lasts, from the committed layers alone.
+ *
+ * The monitor cannot tell the reviewer a runway without a schema change, so it
+ * is fitted here from the same per-layer combined reserve the argon chart
+ * already plots: a least-squares slope of reserve against time over the trailing
+ * window, restarted at any bottle change, then latest reserve / that rate. It is
+ * hours to empty at the recent draw, in the gauge's own pressure units -- never
+ * a volume, and never projected past what the layers actually show.
+ */
+function argonRunway() {
+  const points = [];
+  for (const layer of state.layers) {
+    const combined = layer.argon_snapshot?.combined;
+    const value = combined && combined.state === 'complete' ? combined.value : null;
+    const at = Date.parse(layer.captured_at);
+    if (typeof value !== 'number' || !Number.isFinite(value) || Number.isNaN(at)) continue;
+    // A refill resets the level; the fit must not read the jump as a gain.
+    if (points.length && value - points[points.length - 1].value >= TANK_CHANGE_RISE) {
+      points.length = 0;
+    }
+    points.push({ value, at });
+  }
+  const recent = points.slice(-RUNWAY_WINDOW);
+  if (recent.length < RUNWAY_MIN_POINTS) {
+    return { hours: null, ratePerHour: null, reason: 'not enough committed layers with a combined reading' };
+  }
+  const hoursOf = (ms) => (ms - recent[0].at) / 3_600_000;
+  const spanHours = hoursOf(recent[recent.length - 1].at);
+  if (spanHours < RUNWAY_MIN_HOURS) {
+    return { hours: null, ratePerHour: null, reason: 'not enough elapsed time to measure a rate' };
+  }
+  const n = recent.length;
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (const point of recent) {
+    const x = hoursOf(point.at);
+    sx += x; sy += point.value; sxx += x * x; sxy += x * point.value;
+  }
+  const denom = n * sxx - sx * sx;
+  if (denom === 0) return { hours: null, ratePerHour: null, reason: 'readings do not span any time' };
+  const slope = (n * sxy - sx * sy) / denom;
+  const ratePerHour = -slope;
+  if (ratePerHour <= 0) {
+    return { hours: null, ratePerHour, reason: 'argon steady over these layers' };
+  }
+  const latest = recent[recent.length - 1].value;
+  return { hours: latest > 0 ? latest / ratePerHour : 0, ratePerHour, reason: null };
 }
 
 function layerMedia(layer) {
@@ -713,6 +770,7 @@ function renderSidebar() {
   const severityBadge = el('layer-severity');
   const reason = el('analysis-reason');
   const combinedLabel = el('argon-combined');
+  renderRunway();
   if (!layer) {
     facts.innerHTML = '';
     title.textContent = 'No layer';
@@ -764,6 +822,23 @@ function renderSidebar() {
     row.append(dot, label, value);
     argon.append(row);
   }
+}
+
+function renderRunway() {
+  const node = el('argon-runway');
+  if (!node) return;
+  const { hours, ratePerHour, reason } = argonRunway();
+  if (hours == null) {
+    node.textContent = `Argon left: ${reason}.`;
+    node.dataset.state = 'muted';
+    return;
+  }
+  const units = state.layers
+    .flatMap((entry) => entry.argon_snapshot?.channels || [])
+    .find((channel) => channel.units)?.units || '';
+  node.dataset.state = 'ok';
+  const left = hours < 10 ? hours.toFixed(1) : Math.round(hours);
+  node.textContent = `Argon left: ~${left} h at ${ratePerHour.toFixed(2)} ${units}/h`.trimEnd();
 }
 
 // ---------- scrubber ----------

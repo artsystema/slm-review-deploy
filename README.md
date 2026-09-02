@@ -112,8 +112,13 @@ does not bury the back button.
 2. Run the agent with `--once`; its JSON output should show `committed: 1` for
    a new bundle, then `attempted: 0` on the next pass.
 3. Open the viewer. Select the session and confirm the index, verdict, defect
-   chart point, and argon snapshot match the local manifest. Then check the
-   viewer behaviours the operator depends on:
+   chart point, and argon snapshot match the local manifest. Confirm the
+   **Argon left** line under the snapshot reads either `~N h at R units/h` on a
+   session whose reserve is falling, or a stated reason (`not enough committed
+   layers…`, `argon steady…`) — it is fitted here from the layers' combined
+   values, not sent by the monitor. Confirm each frame carries the burned
+   `<print name> | <capture time>` strip along its top. Then check the viewer
+   behaviours the operator depends on:
    - Press and drag along the timeline directly under the image; frames follow
      the finger and the bubble names the layer being passed.
        Supported touch devices provide a light tick as the selected layer changes;
@@ -211,3 +216,8 @@ read API after the cPanel directory protection challenge. They are deduplicated
 by SHA-256. The original manifest JSON is retained together with normalized
 fields. The service accepts only the fixed raw-before, raw-after, diagnostic
 overlay, and legacy key-view roles declared by the bundle contract.
+
+Every frame the monitor sends already has a `<print name> | <capture time>`
+strip burned along its top, so a frame opened from a shared link still names its
+build once the page around it is gone. The service stores and serves the frames
+as received; it does not add or read the strip.
