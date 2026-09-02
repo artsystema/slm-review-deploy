@@ -416,6 +416,13 @@ async function applyHash() {
       if (parameters.get('grid') === '1') setGrid(true);
       else { renderSelector(); renderStage(); }
     }
+  } catch (error) {
+    // A deep link is a convenience, and a stale one must cost nothing. The
+    // session it names may be gone, the layer id may have been republished
+    // under a different number, the network may simply have blinked. Failing
+    // here used to take the whole live loop down with it, because the poll was
+    // scheduled after this step rather than independently of it.
+    setNotice(`Could not open that link: ${error.message}. Showing the latest instead.`, true);
   } finally {
     applyingHash = false;
   }
@@ -1187,9 +1194,12 @@ setFollow(true);
 setFill(false);
 setGrid(false);
 applyTransform();
+// The live loop starts whatever else happened. It is the one thing that can
+// recover the page on its own -- a failed first load fixes itself on the next
+// tick -- so nothing it does not depend on may prevent it starting.
 loadSessions()
   .then(applyHash)
-  .then(() => schedulePoll(POLL_MIN_MS))
-  .catch(error => setNotice(`Could not load remote review: ${error.message}`, true));
+  .catch(error => setNotice(`Could not load remote review: ${error.message}`, true))
+  .finally(() => schedulePoll(POLL_MIN_MS));
 // New sessions appear without a reload too, just on a lazier clock than layers.
 window.setInterval(() => { if (!document.hidden) loadSessions(true).catch(() => {}); }, 60000);
