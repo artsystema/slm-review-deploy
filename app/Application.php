@@ -76,14 +76,43 @@ final class Application
         if ($method === 'GET' && $path === '/api/v1/sessions') {
             Response::json(200, ['sessions' => $this->review->sessions(self::limit($request, 50, 1, 100))]);
         }
+        if ($method === 'GET' && $path === '/api/v1/layers/index') {
+            // The whole build's timeline, without the per-layer detail. See
+            // ReviewRepository::sessionIndex().
+            $monitorId = self::monitorQuery($request);
+            $unassigned = $request->query('unassigned') === 'true';
+            $sessionId = $unassigned ? null : self::positiveQuery($request, 'session_id', true);
+            $index = $this->review->sessionIndex(
+                $monitorId,
+                $sessionId,
+                $unassigned,
+                self::limit($request, 20000, 1, 50000),
+                $request->basePath(),
+            );
+            Response::json(200, [
+                'layers' => $index['layers'],
+                // A build longer than the cap is reported rather than silently
+                // shortened: a timeline missing its end is worse than a warning.
+                'truncated' => $index['truncated'],
+                'latest_id' => $this->review->latestPublicationId($monitorId, $sessionId, $unassigned),
+            ]);
+        }
         if ($method === 'GET' && $path === '/api/v1/layers') {
-            $monitorId = $request->query('monitor_instance_id');
-            if (!is_string($monitorId) || preg_match('/^[0-9a-f-]{36}$/Di', $monitorId) !== 1) {
-                throw new HttpError(422, 'monitor_instance_id is required');
-            }
+            $monitorId = self::monitorQuery($request);
             $unassigned = $request->query('unassigned') === 'true';
             $sessionId = $unassigned ? null : self::positiveQuery($request, 'session_id', true);
             $limit = self::limit($request, 120, 1, 250);
+            $ids = self::idsQuery($request);
+            if ($ids !== null) {
+                // Detail for layers the viewer has already located in the
+                // session index, so it fetches the screenful it shows rather
+                // than the build.
+                Response::json(200, [
+                    'layers' => $this->review->layersByIds(
+                        $monitorId, $sessionId, $unassigned, $ids, $request->basePath()
+                    ),
+                ]);
+            }
             $sinceId = self::sinceQuery($request);
             if ($sinceId !== null) {
                 // Poll for what arrived, so a viewer following a live build never
@@ -141,6 +170,46 @@ final class Application
         if (!hash_equals($this->config->ingestToken(), $token)) {
             throw new HttpError(403, 'ingest authorization is invalid');
         }
+    }
+
+    /**
+     * `ids=1,2,3`, or null when the caller did not ask for named layers.
+     *
+     * Bounded because it becomes an IN list: a viewer needs the layers around
+     * its selection, not an arbitrary slice of the build.
+     *
+     * @return list<int>|null
+     */
+    private static function idsQuery(Request $request): ?array
+    {
+        $value = $request->query('ids');
+        if ($value === null) {
+            return null;
+        }
+        if ($value === '') {
+            throw new HttpError(422, 'ids must not be empty');
+        }
+        $ids = [];
+        foreach (explode(',', $value) as $item) {
+            if (!ctype_digit($item) || (int) $item < 1) {
+                throw new HttpError(422, 'ids must be positive integers');
+            }
+            $ids[] = (int) $item;
+        }
+        $ids = array_values(array_unique($ids));
+        if (count($ids) > 120) {
+            throw new HttpError(422, 'ids may name at most 120 layers');
+        }
+        return $ids;
+    }
+
+    private static function monitorQuery(Request $request): string
+    {
+        $monitorId = $request->query('monitor_instance_id');
+        if (!is_string($monitorId) || preg_match('/^[0-9a-f-]{36}$/Di', $monitorId) !== 1) {
+            throw new HttpError(422, 'monitor_instance_id is required');
+        }
+        return $monitorId;
     }
 
     private static function limit(Request $request, int $default, int $minimum, int $maximum): int
@@ -278,7 +347,6 @@ final class Application
               <div id="scrub-bubble" class="scrub-bubble" aria-hidden="true"></div>
             </div>
             <div class="timeline-foot">
-              <button id="load-earlier" class="load-earlier" type="button" hidden>Load earlier</button>
               <span id="timeline-count" class="timeline-count"></span>
               <span class="keyboard-hint">Drag to scrub &middot; arrows to step &middot; double-tap to zoom</span>
             </div>
@@ -294,7 +362,7 @@ final class Application
       </section>
       <section class="metrics-grid">
         <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow">ROLLING QUALITY</p><h2>Defect rate</h2></div><strong id="defect-rate">--</strong></div><canvas id="defect-chart" height="132" aria-label="Rolling defect rate chart"></canvas><p id="defect-note" class="chart-note"></p></article>
-        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow">CAPTURED WITH LAYER</p><h2>Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="132" aria-label="Argon snapshot chart"></canvas><p class="chart-note">Gaps mean no reliable reading. Values are never interpolated.</p></article>
+        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow">CAPTURED WITH LAYER</p><h2>Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="132" aria-label="Argon snapshot chart"></canvas><p class="chart-note">Values are never interpolated. On a build longer than this chart is wide, each pixel column shows the highest and lowest reading in it, and becomes a gap only where the whole column was unreadable.</p></article>
       </section>
     </main>
   </div>

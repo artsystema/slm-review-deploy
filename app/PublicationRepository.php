@@ -136,6 +136,7 @@ final class PublicationRepository
                  WHERE id = :id AND status = \'staged\''
             );
             $statement->execute(['id' => $publication['id']]);
+            $this->writeSummary((int) $publication['id'], (string) $publication['manifest_json']);
             $this->database->commit();
             return ['status' => 'committed', 'missing_media' => []];
         } catch (\Throwable $exception) {
@@ -165,11 +166,47 @@ final class PublicationRepository
         return $missing;
     }
 
+    /**
+     * Record the timeline fields beside the manifest as the layer commits.
+     *
+     * The session index reads these columns rather than thousands of manifests.
+     * Doing it here means a layer is summarised once, by the request that
+     * published it, instead of by whichever reviewer happens to open the build
+     * first. The read path still copes with rows that predate this.
+     */
+    private function writeSummary(int $publicationId, string $manifestJson): void
+    {
+        $summary = ReviewRepository::summaryOfManifest($manifestJson);
+        $statement = $this->database->prepare(
+            'UPDATE publications
+                SET summary_version = :version, deficit_area_frac = :deficit,
+                    argon_combined_value = :combined_value, argon_combined_state = :combined_state,
+                    argon_units = :units, argon_channels_json = :channels, preview_sha256 = :preview
+              WHERE id = :id'
+        );
+        $statement->execute([
+            'version' => ReviewRepository::SUMMARY_VERSION,
+            'deficit' => $summary['deficit_area_frac'],
+            'combined_value' => $summary['combined_value'],
+            'combined_state' => $summary['combined_state'],
+            'units' => $summary['units'],
+            'channels' => json_encode(array_map(
+                static fn (array $channel): array => [
+                    $channel['channel'], $channel['value'], $channel['reading_status'],
+                ],
+                $summary['channels'],
+            ), JSON_THROW_ON_ERROR),
+            'preview' => $summary['preview_sha256'],
+            'id' => $publicationId,
+        ]);
+    }
+
     /** @return array<string, mixed>|null */
     private function findPublication(string $publicationKey, bool $forUpdate): ?array
     {
         $statement = $this->database->prepare(
-            'SELECT id, status, manifest_sha256 FROM publications WHERE publication_key = :publication_key'
+            'SELECT id, status, manifest_sha256, manifest_json FROM publications
+             WHERE publication_key = :publication_key'
             . ($forUpdate ? ' FOR UPDATE' : '')
         );
         $statement->execute(['publication_key' => $publicationKey]);

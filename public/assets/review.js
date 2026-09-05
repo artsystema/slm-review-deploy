@@ -15,7 +15,10 @@ const state = {
   layers: [],
   selectedId: null,
   selectedMediaRole: null,
-  nextBefore: null,
+  // The session index is the timeline; detail arrives per layer looked at.
+  detail: new Map(),
+  detailPending: new Set(),
+  truncated: false,
   latestId: 0,
   loading: false,
   follow: true,
@@ -37,7 +40,6 @@ const el = id => document.querySelector(`#${id}`);
 const select = el('session-select');
 const notice = el('notice');
 const filmstrip = el('filmstrip');
-const loadEarlier = el('load-earlier');
 const followToggle = el('follow-toggle');
 const stage = el('stage');
 const viewport = el('stage-viewport');
@@ -58,6 +60,12 @@ const POLL_MIN_MS = 10000;
 const POLL_MAX_MS = 60000;
 const MAX_SCALE = 8;
 const PREFETCH_RADIUS = 6;
+// Detail for the selection and its neighbours, so stepping and scrubbing find
+// the next frame's facts already here. Kept under the API's own id cap.
+const DETAIL_RADIUS = 12;
+// How close the selection may get to unfetched detail before the next window is
+// asked for. Smaller than the radius so one request covers several steps.
+const DETAIL_CORE = 3;
 // A rise of at least this much in the combined reserve is a bottle being
 // changed, not the needle wandering. Mirrors the monitor's argon.TANK_CHANGE_RISE.
 const TANK_CHANGE_RISE = 1.0;
@@ -326,7 +334,7 @@ function showImage(url) {
 function prefetchAround(index) {
   const role = state.selectedMediaRole;
   for (let offset = -PREFETCH_RADIUS; offset <= PREFETCH_RADIUS; offset += 1) {
-    const layer = state.layers[index + offset];
+    const layer = detailed(state.layers[index + offset]);
     if (!layer) continue;
     const media = layerMedia(layer).find(item => item.role === role) || preferredMedia(layer);
     if (media) cached(media.url);
@@ -345,7 +353,7 @@ function prefetchAround(index) {
 function resolveStageAspect() {
   if (state.stageAspect) return state.stageAspect;
   for (const role of ['raw_after', 'diagnostic_overlay', 'raw_before', 'key_view']) {
-    for (const layer of state.layers) {
+    for (const layer of state.detail.values()) {
       const media = layerMedia(layer).find(item => item.role === role);
       if (media && media.width > 0 && media.height > 0) {
         state.stageAspect = media.width / media.height;
@@ -441,7 +449,6 @@ function setFill(filling) {
 // A followed session is addressed as `live` rather than by whichever layer
 // happened to be newest when the link was copied.
 
-const MAX_DEEP_LINK_PAGES = 8;
 
 // Opening a shared link runs loads that would each write the hash, overwriting
 // the link before it has been read. Writes are held until the link is applied.
@@ -490,23 +497,25 @@ function selectSessionFromHash(parameters) {
   return true;
 }
 
-/** Page back until the addressed layer is loaded. A link may point deep into a
- *  build, and the opening window only holds the newest layers. */
-async function focusHashLayer(parameters) {
+/**
+ * Open the layer a link addresses.
+ *
+ * The session index carries the whole build, so this is a lookup rather than
+ * the paging walk it used to be: a link into layer 3,000 of a long build no
+ * longer costs a dozen round trips before it can answer, and a layer that is
+ * genuinely absent is now known to be absent rather than merely not reached.
+ */
+function focusHashLayer(parameters) {
   const run = Number(parameters.get('r'));
   const index = Number(parameters.get('l'));
   if (!parameters.get('r') || !parameters.get('l') || !Number.isFinite(run) || !Number.isFinite(index)) {
     return false;
   }
-  for (let page = 0; page < MAX_DEEP_LINK_PAGES; page += 1) {
-    const layer = state.layers.find(item => item.run_local_id === run && item.index === index);
-    if (layer) {
-      setFollow(false);
-      activateLayer(layer, false);
-      return true;
-    }
-    if (!state.nextBefore) break;
-    await loadLayers(false);
+  const layer = state.layers.find(item => item.run_local_id === run && item.index === index);
+  if (layer) {
+    setFollow(false);
+    activateLayer(layer, false);
+    return true;
   }
   setNotice(`Layer ${index} of run ${run} is not among the published layers for this session.`, true);
   return false;
@@ -571,10 +580,11 @@ function currentSelection() {
   }
 }
 
-function sessionParameters() {
+function sessionParameters(limit = '250') {
   const chosen = currentSelection();
   if (chosen === null) return null;
-  const parameters = new URLSearchParams({ monitor_instance_id: chosen.monitor, limit: '250' });
+  const parameters = new URLSearchParams({ monitor_instance_id: chosen.monitor });
+  if (limit !== null) parameters.set('limit', limit);
   if (chosen.session === null) parameters.set('unassigned', 'true');
   else parameters.set('session_id', chosen.session);
   return parameters;
@@ -586,53 +596,123 @@ function sessionParameters() {
 // supersedes, and a superseded response is discarded when it lands.
 let loadToken = 0;
 
-async function loadLayers(reset = true) {
+/**
+ * Load the whole session's timeline in one request.
+ *
+ * The index carries only what the strip, the severity scrubber, the charts and
+ * the argon runway read -- about 161 bytes a layer against the 4,517 the full
+ * row costs, most of which is a metrics dict nothing here displays. A build of
+ * thousands used to arrive fifteen pages at a time, and the operator had to
+ * keep pressing for them; worse, the defect rate and the hours of argon left
+ * were fitted over however many pages had been pressed for, so the figures
+ * moved when the button was pressed. Over the whole build they are properties
+ * of the build.
+ *
+ * Per-layer detail -- the media, the metrics, the processor, the reading ages
+ * -- is fetched for the layers actually being looked at. See ensureDetail().
+ */
+async function loadLayers() {
   if (!select.value) return;
-  if (!reset && state.loading) return;
   const token = ++loadToken;
   state.loading = true;
   try {
-    const parameters = sessionParameters();
+    const parameters = sessionParameters(null);
     if (parameters === null) return;
-    if (!reset && state.nextBefore) {
-      parameters.set('before_run_local_id', state.nextBefore.run);
-      parameters.set('before_layer_index', state.nextBefore.layer);
-      parameters.set('before_id', state.nextBefore.id);
-    }
-    const payload = await api(`/api/v1/layers?${parameters}`);
+    const payload = await api(`/api/v1/layers/index?${parameters}`);
     if (token !== loadToken) return;
-    if (reset) {
-      state.layers = [];
-      state.stageAspect = null;
-      state.selectedMediaRole = null;
-      imageCache.clear();
-      cachedPixels = 0;
-      resetZoom();
-    }
+    state.layers = [];
+    state.detail.clear();
+    state.stageAspect = null;
+    state.selectedMediaRole = null;
+    imageCache.clear();
+    cachedPixels = 0;
+    resetZoom();
     mergeLayers(payload.layers);
-    state.nextBefore = payload.next_before ?? null;
-    state.latestId = reset
-      ? (payload.latest_id || 0)
-      : Math.max(state.latestId, payload.latest_id || 0);
-    if (reset) {
-      state.follow = true;
-      state.unseen = 0;
-      const last = state.layers.at(-1);
-      state.selectedId = last?.id ?? null;
-      state.selectedMediaRole = last ? preferredMedia(last)?.role ?? null : null;
-    }
-    loadEarlier.hidden = state.nextBefore == null;
-    applyStageAspect();
+    state.truncated = Boolean(payload.truncated);
+    state.latestId = payload.latest_id || 0;
+    state.follow = true;
+    state.unseen = 0;
+    state.selectedId = state.layers.at(-1)?.id ?? null;
     reportCounts();
     render();
     // The address bar is the share affordance, so it carries a usable link from
     // the first load rather than only after the operator touches something.
     writeHash();
-    if (state.selectedId != null) requestAnimationFrame(() => revealLayerChip(state.selectedId, 'auto'));
+    if (state.selectedId != null) {
+      requestAnimationFrame(() => revealLayerChip(state.selectedId, 'auto'));
+      await ensureDetail(selectedIndex());
+    }
   } finally {
     // A superseded load must not clear the flag out from under the newer one.
     if (token === loadToken) state.loading = false;
   }
+}
+
+// ---------- per-layer detail ----------
+
+/**
+ * Fetch the detail for the selection and the layers either side of it.
+ *
+ * Stepping and scrubbing move one layer at a time, so the neighbours are asked
+ * for in the same request as the selection: by the time the operator arrives at
+ * a layer its frame and its facts are usually already here. Requests in flight
+ * are not repeated, and a failure leaves the timeline alone -- the index is
+ * what the strip and the charts are drawn from, and it is already loaded.
+ */
+async function ensureDetail(index) {
+  const known = offset => {
+    const layer = state.layers[index + offset];
+    return !layer || state.detail.has(layer.id) || state.detailPending.has(layer.id);
+  };
+  // Only go back to the server when the layers about to be stepped onto are
+  // missing, not whenever the edge of the window is. Asking on every keypress
+  // would put one request per arrow press on a plant uplink to fetch one layer.
+  let atEdge = false;
+  for (let offset = -DETAIL_CORE; offset <= DETAIL_CORE; offset += 1) {
+    if (!known(offset)) { atEdge = true; break; }
+  }
+  if (!atEdge) return;
+  const wanted = [];
+  for (let offset = -DETAIL_RADIUS; offset <= DETAIL_RADIUS; offset += 1) {
+    const layer = state.layers[index + offset];
+    if (!layer || state.detail.has(layer.id) || state.detailPending.has(layer.id)) continue;
+    wanted.push(layer.id);
+  }
+  if (!wanted.length) return;
+  const parameters = sessionParameters(null);
+  if (parameters === null) return;
+  parameters.set('ids', wanted.join(','));
+  for (const id of wanted) state.detailPending.add(id);
+  try {
+    const payload = await api(`/api/v1/layers?${parameters}`);
+    for (const layer of payload.layers) state.detail.set(layer.id, layer);
+    applyStageAspect();
+    // Only the parts that read detail; the timeline did not change.
+    renderSelector();
+    renderStage();
+    renderSidebar();
+  } catch (error) {
+    setNotice(`Layer detail could not be loaded: ${error.message}.`, true);
+  } finally {
+    for (const id of wanted) state.detailPending.delete(id);
+  }
+}
+
+/**
+ * The layer with its detail where that has arrived.
+ *
+ * A detail row is a superset of an index row, so this is the index row until
+ * the fetch lands and the full row afterwards. Callers that need media must
+ * check `detailLoaded` rather than an empty media list: not loaded yet and
+ * nothing was published are different answers, and the second one is a fault.
+ */
+function detailed(layer) {
+  if (!layer) return null;
+  return state.detail.get(layer.id) ?? layer;
+}
+
+function detailLoaded(layer) {
+  return Boolean(layer && state.detail.has(layer.id));
 }
 
 function reportCounts(extra = '') {
@@ -642,9 +722,16 @@ function reportCounts(extra = '') {
   const behind = state.unseen && !state.follow
     ? `  ${state.unseen} newer layer${state.unseen === 1 ? '' : 's'} arrived; press End or Live to catch up.`
     : '';
+  // A build past the index cap is said out loud. Every figure on this page is
+  // computed over the layers named here, so a timeline that is quietly missing
+  // its start would make the defect rate and the argon runway quietly wrong.
+  const capped = state.truncated
+    ? '  This build is longer than one index request carries; the figures cover the layers listed here only.'
+    : '';
   setNotice(
     `${state.layers.length} loaded / ${completed} completed / ${flagged} flagged / `
-    + `${unavailable} unavailable or uncertain.${behind}${extra}`,
+    + `${unavailable} unavailable or uncertain.${behind}${capped}${extra}`,
+    state.truncated,
   );
 }
 
@@ -666,6 +753,9 @@ async function poll() {
     if (parameters === null) { schedulePoll(POLL_MIN_MS); return; }
     parameters.set('since_id', String(state.latestId));
     const payload = await api(`/api/v1/layers?${parameters}`);
+    // The poll returns full rows, so a layer that arrives live is already
+    // detailed: following a build never waits for a second request.
+    for (const layer of payload.layers) state.detail.set(layer.id, layer);
     const added = mergeLayers(payload.layers);
     state.latestId = Math.max(state.latestId, payload.latest_id || 0);
     if (added) {
@@ -765,7 +855,7 @@ function stepLayer(offset) {
 
 function renderSelector() {
   const selector = el('evidence-selector');
-  const layer = selected();
+  const layer = detailed(selected());
   const media = layer ? layerMedia(layer) : [];
   const current = currentMedia(layer);
   const shown = current?.role ?? null;
@@ -792,7 +882,8 @@ function renderSelector() {
 }
 
 function renderStage() {
-  const layer = selected();
+  const chosen = selected();
+  const layer = detailed(chosen);
   const caption = el('frame-caption');
   if (!layer) {
     showImage(null);
@@ -803,10 +894,18 @@ function renderStage() {
   }
   const current = currentMedia(layer);
   if (!current) {
+    // Waiting for this layer's detail and having none published are different
+    // answers, and only the second is a fault worth reporting as one.
+    const waiting = !detailLoaded(chosen);
     showImage(null);
     stageEmpty.hidden = false;
-    stageEmpty.textContent = 'No review image was published for this result.';
-    caption.textContent = 'Raw and diagnostic evidence unavailable.';
+    stageEmpty.textContent = waiting
+      ? 'Loading this layer’s evidence…'
+      : 'No review image was published for this result.';
+    caption.textContent = waiting
+      ? `Layer ${layer.index}`
+      : 'Raw and diagnostic evidence unavailable.';
+    if (waiting) ensureDetail(selectedIndex());
     return;
   }
   stageEmpty.hidden = true;
@@ -820,12 +919,15 @@ function renderStage() {
   stageImage.alt = `Layer ${layer.index} ${mediaLabels[current.role] || current.role}`;
   showImage(current.url);
   prefetchAround(selectedIndex());
+  ensureDetail(selectedIndex());
   const dimensions = current.width && current.height ? `${current.width} x ${current.height}` : 'dimensions unavailable';
   caption.textContent = `${mediaLabels[current.role] || current.role} / ${dimensions}${current.stage ? ` / ${current.stage}` : ''}`;
 }
 
 function renderSidebar() {
-  const layer = selected();
+  const chosen = selected();
+  const layer = detailed(chosen);
+  const waiting = Boolean(chosen) && !detailLoaded(chosen);
   const facts = el('layer-facts');
   const title = el('layer-title');
   const argon = el('argon-state');
@@ -846,21 +948,27 @@ function renderSidebar() {
   title.textContent = `Layer ${layer.index}`;
   severityBadge.textContent = layer.analysis.severity || 'unknown';
   severityBadge.className = `severity-badge severity-${severityToken(layer.analysis.severity)}`;
-  reason.textContent = layer.analysis.reason || 'No processor explanation was published for this layer.';
+  // The session index answers the verdict; the explanation and the provenance
+  // come with the detail. Saying "unknown" for a field that is merely still in
+  // flight would read as the monitor having failed to record it.
+  const pending = value => (waiting ? 'loading...' : value);
+  reason.textContent = waiting
+    ? 'Loading this layer’s analysis...'
+    : layer.analysis.reason || 'No processor explanation was published for this layer.';
   const values = [
     ['Captured', new Date(layer.captured_at).toLocaleString()],
     ['Status', layer.analysis.status],
-    ['State', layer.analysis.state],
+    ['State', pending(layer.analysis.state)],
     ['Deficit area', percent(layer.analysis.deficit_area_frac)],
-    ['Confidence', numeric(layer.analysis.confidence)],
-    ['Processor', layer.run ? `${layer.run.processor} ${layer.run.processor_version}` : 'unknown'],
-    ['Rules', layer.run?.rules_version || 'unknown'],
-    ['Profile', layer.run?.profile_name || 'unknown'],
+    ['Confidence', pending(numeric(layer.analysis.confidence))],
+    ['Processor', pending(layer.run ? `${layer.run.processor} ${layer.run.processor_version}` : 'unknown')],
+    ['Rules', pending(layer.run?.rules_version || 'unknown')],
+    ['Profile', pending(layer.run?.profile_name || 'unknown')],
     // Which build published this layer. Two monitors feeding the same reviewer
     // are otherwise indistinguishable, and a stale one shows up only as fewer
     // views than expected -- which reads as a fault in this page rather than in
     // the machine that sent the bundle.
-    ['Monitor build', layer.monitor_software_version || 'unknown'],
+    ['Monitor build', pending(layer.monitor_software_version || 'unknown')],
   ];
   facts.innerHTML = values.map(([key, value]) => `<dt>${escaped(key)}</dt><dd>${escaped(value ?? 'unknown')}</dd>`).join('');
   const channels = layer.argon_snapshot.channels || [];
@@ -878,9 +986,12 @@ function renderSidebar() {
     row.className = `argon-row ${channel.value == null ? 'is-missing' : ''}`;
     row.style.setProperty('--channel-color', channelColors[(channel.channel - 1) % channelColors.length]);
     const dot = document.createElement('span'); dot.className = 'channel-dot';
-    const label = document.createElement('span'); label.textContent = `Channel ${channel.channel} / ${ageLabel(channel.age_ms)}`;
+    const label = document.createElement('span');
+    // The index knows the reading; how old it was arrives with the detail.
+    label.textContent = `Channel ${channel.channel} / ${waiting ? 'age loading...' : ageLabel(channel.age_ms)}`;
     const value = document.createElement('strong');
-    value.textContent = channel.value == null ? channel.reading_status : `${numeric(channel.value)} ${channel.units || ''}`;
+    const units = channel.units || combined.units || '';
+    value.textContent = channel.value == null ? channel.reading_status : `${numeric(channel.value)} ${units}`.trimEnd();
     row.append(dot, label, value);
     argon.append(row);
   }
@@ -895,9 +1006,7 @@ function renderRunway() {
     node.dataset.state = 'muted';
     return;
   }
-  const units = state.layers
-    .flatMap((entry) => entry.argon_snapshot?.channels || [])
-    .find((channel) => channel.units)?.units || '';
+  const units = argonUnits();
   node.dataset.state = 'ok';
   const left = hours < 10 ? hours.toFixed(1) : Math.round(hours);
   node.textContent = `Argon left: ~${left} h at ${ratePerHour.toFixed(2)} ${units}/h`.trimEnd();
@@ -1122,11 +1231,14 @@ function fillChip(chip, layer, position, pitch, total) {
   const isSelected = layer.id === state.selectedId;
   chip.classList.toggle('selected', isSelected);
   chip.ariaSelected = String(isSelected);
-  const preview = preferredMedia(layer);
+  // The index names the chip's image directly -- a published thumbnail where
+  // the monitor sent one, otherwise the same view the chip would have chosen.
+  // The chip does not wait for the layer's detail to know what to show.
+  const preview = layer.preview_url ?? preferredMedia(detailed(layer))?.url ?? null;
   const image = chip.querySelector('img');
   const missing = chip.querySelector('.chip-missing');
   if (preview) {
-    if (image.getAttribute('src') !== preview.url) image.src = preview.url;
+    if (image.getAttribute('src') !== preview) image.src = preview;
     image.alt = `Layer ${layer.index} evidence preview`;
     image.hidden = false;
     missing.hidden = true;
@@ -1452,12 +1564,20 @@ function renderArgonChart() {
   keepChartBase('#argon-chart', surface);
 }
 
-/** The units the gauges report in, from the first layer that states them. */
+/**
+ * The units the gauges report in, from the first layer that states them.
+ *
+ * The session index carries them once per layer beside the combined reserve
+ * rather than on every channel, so both places are looked at; a chart labelled
+ * with a bare number would not say what it is a number of.
+ */
 function argonUnits() {
   for (const layer of state.layers) {
     for (const channel of layer.argon_snapshot?.channels || []) {
       if (channel.units) return channel.units;
     }
+    const combined = layer.argon_snapshot?.combined;
+    if (combined?.units) return combined.units;
   }
   return '';
 }
@@ -1501,7 +1621,6 @@ select.addEventListener('change', () => {
   writeHash();
   loadLayers().then(() => schedulePoll(POLL_MIN_MS)).catch(error => setNotice(error.message, true));
 });
-loadEarlier.addEventListener('click', () => loadLayers(false).catch(error => setNotice(error.message, true)));
 followToggle.addEventListener('click', () => setFollow(!state.follow));
 fillToggle.addEventListener('click', () => setFill(!state.fill));
 gridToggle.addEventListener('click', () => setGrid(!state.grid));

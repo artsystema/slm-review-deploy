@@ -54,12 +54,17 @@ paths are examples only; substitute the cPanel account's actual home path.
    `config.example.php`, with a generated ingest token and a private storage
    path such as `/home/CPANEL_USER/slm-review-storage`.
 4. Import `migrations/001_initial.sql`, then `migrations/002_build_order.sql`,
-   then `migrations/003_monitor_version.sql`, with phpMyAdmin into the new
-   database. Both later migrations are required when upgrading an existing
-   install: 002 adds the index behind the build-ordered timeline, and 003
-   records which monitor build published each layer, backfilling history from
-   the manifests already stored. Without 003 the ingest endpoint rejects every
-   upload, because it writes a column that does not exist yet.
+   then `migrations/003_monitor_version.sql`, then
+   `migrations/004_layer_summary.sql`, with phpMyAdmin into the new database.
+   All three later migrations are required when upgrading an existing install:
+   002 adds the index behind the build-ordered timeline, 003 records which
+   monitor build published each layer, backfilling history from the manifests
+   already stored, and 004 adds the columns the session index is read from.
+   Without 003 the ingest endpoint rejects every upload, because it writes a
+   column that does not exist yet; without 004 it does the same, and the
+   viewer's timeline request fails outright. Unlike 003, 004 needs no backfill
+   step: the read path fills older rows in from the manifests it already
+   stores, a bounded number per request, and answers correctly meanwhile.
 5. Upload the contents of `public/` to the hostname document root. Copy
    `public/app-root.example.php` to `public/app-root.php` and set its returned
    string to `/home/CPANEL_USER/slm-review`. Never upload `private/config.php`
@@ -134,11 +139,14 @@ does not bury the back button.
      the chip, or select any earlier layer, and confirm it stops following
      while still reporting that new layers arrived.
    - Repeat at a narrow mobile viewport without horizontal page overflow.
-   - On a session of a few thousand layers, hold **Load earlier** until the
-     whole build is loaded, then step with the arrows and drag the timeline.
-     The filmstrip keeps only the chips near the viewport in the page, so its
-     scrollbar is as long as the build while the strip itself stays responsive;
-     the selected chip must always end up highlighted and in view.
+   - On a session of a few thousand layers, confirm the notice reports the
+     whole build on the first load with no **Load earlier** to press, then step
+     with the arrows and drag the timeline. The filmstrip keeps only the chips
+     near the viewport in the page, so its scrollbar is as long as the build
+     while the strip itself stays responsive; the selected chip must always end
+     up highlighted and in view. Stepping onto a layer whose detail has not
+     arrived shows "Loading this layer's evidence"; it must never say the
+     evidence was not published.
 4. Stop the server during a pass or temporarily use an invalid URL. Confirm
    the monitor continues normally and the agent reports a retry/backlog.
 5. Restore the URL and run `--once`; confirm no duplicate remote layer appears.
@@ -226,6 +234,16 @@ pixels rather than the layers:
   its tests with `node --test "remote-review/tests/*.test.mjs"`.
 - JSON responses are gzipped when the client accepts it and the host is not
   already compressing them; a layer window compresses about ten to one.
+- The timeline arrives as one session index rather than pages of full layer
+  rows: 467 B per layer raw and 73 B gzipped against 4,517 B, so a 3,631-layer
+  build is 0.25 MiB in one request instead of 15.6 MiB across fifteen presses
+  of a button. There is no **Load earlier** control any more because there is
+  nothing left to load. The per-layer detail -- metrics, processor, media,
+  reading ages -- is fetched for the layer being looked at and its neighbours,
+  and the sidebar says "loading" rather than "unknown" while it is in flight.
+- Because the whole build is loaded, the defect rate and the **Argon left**
+  figure are computed over the build. They used to be fitted over however many
+  pages had been loaded, so they moved when the operator pressed the button.
 
 ## Layout
 

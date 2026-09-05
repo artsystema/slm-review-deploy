@@ -112,6 +112,13 @@ final class ManifestValidator
             throw new HttpError(422, 'media must be an array');
         }
         $mediaPaths = [
+            // A chip-sized copy of the analysis view. The filmstrip showed the
+            // full 1,280 px evidence frame in a 116x68 box, which is about
+            // 160 KB and five megabytes of decoded bitmap per chip; on a build
+            // of thousands of layers that is what a phone runs out of memory
+            // on. Accepted before any monitor sends it, so the reviewer can be
+            // deployed first.
+            'thumbnail' => 'thumbnail.jpg',
             'key_view' => 'key-view.jpg',
             'raw_before' => 'raw-before.jpg',
             'raw_after' => 'raw-after.jpg',
