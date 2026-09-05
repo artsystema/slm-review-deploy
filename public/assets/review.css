@@ -733,19 +733,6 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
 
 .keyboard-hint { color: var(--text-dim); font-size: 10px; }
 
-.load-earlier {
-  min-height: 26px;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--panel-2);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 10px;
-}
-
-.load-earlier:hover { border-color: var(--accent); }
-
 /* The chip pitch is read back by the viewer to work out which chips a scroll
    position puts on screen, so it lives here as the one definition of it. */
 .filmstrip {

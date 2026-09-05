@@ -239,11 +239,12 @@ function mergeLayers(incoming) {
 }
 
 // ---------- derived series ----------
-// The defect rate and the argon channels are functions of the whole loaded
-// list, so they are computed once per change to that list rather than once per
-// keystroke. A build of thousands of layers is stepped through one layer at a
-// time; recomputing every series on every step is what made the arrow keys
-// feel like the page had died.
+// Everything here is a function of the loaded layers and nothing else -- the
+// plotted series, the counts in the notice, how long the argon lasts, the units
+// it is measured in. So it is computed when layers arrive rather than when the
+// selection moves. Refitting a build's argon runway on every arrow press is
+// both slow and a statement about the code that is not true: the runway is a
+// property of the build, not of which layer is being looked at.
 
 let seriesCache = null;
 
@@ -252,11 +253,20 @@ function invalidateSeries() { seriesCache = null; }
 function series() {
   if (seriesCache) return seriesCache;
   const windowSize = Math.min(40, Math.max(1, state.layers.length));
+  let eligibleCount = 0;
+  let flaggedCount = 0;
+  for (const layer of state.layers) {
+    if (eligible(layer)) eligibleCount += 1;
+    if (isFlagged(layer)) flaggedCount += 1;
+  }
   seriesCache = {
     windowSize,
     defect: defectRateSeries(state.layers, windowSize),
     argon: argonSeries(state.layers),
-    eligibleCount: state.layers.reduce((count, layer) => count + (eligible(layer) ? 1 : 0), 0),
+    eligibleCount,
+    flaggedCount,
+    runway: argonRunway(),
+    units: argonUnits(),
   };
   return seriesCache;
 }
@@ -650,16 +660,36 @@ async function loadLayers() {
 
 // ---------- per-layer detail ----------
 
+// Detail rows are the heavy ones -- the metrics dict alone is a third of a
+// layer -- so what has been fetched is bounded like the image cache is. A drag
+// across a long build would otherwise pull the whole thing back in behind the
+// index that exists precisely to avoid that.
+const DETAIL_CACHE_LIMIT = 400;
+
+function rememberDetail(layer) {
+  state.detail.delete(layer.id);
+  state.detail.set(layer.id, layer);
+  // Insertion-ordered, so the front is the least recently fetched. The layer on
+  // screen was just re-inserted and so is never the one dropped.
+  while (state.detail.size > DETAIL_CACHE_LIMIT) {
+    state.detail.delete(state.detail.keys().next().value);
+  }
+}
+
 /**
  * Fetch the detail for the selection and the layers either side of it.
  *
- * Stepping and scrubbing move one layer at a time, so the neighbours are asked
- * for in the same request as the selection: by the time the operator arrives at
- * a layer its frame and its facts are usually already here. Requests in flight
- * are not repeated, and a failure leaves the timeline alone -- the index is
- * what the strip and the charts are drawn from, and it is already loaded.
+ * Called when the selection settles, not while it is moving: a drag passes
+ * hundreds of layers the operator is not stopping on, and asking for each of
+ * them put a hundred requests on the uplink for frames nobody looked at. The
+ * neighbours come in the same request as the selection, so stepping and
+ * releasing a drag find the next layer's facts already here.
+ *
+ * Requests in flight are not repeated, and a failure leaves the timeline alone
+ * -- the strip and the charts are drawn from the index, which is already here.
  */
 async function ensureDetail(index) {
+  if (state.scrubbing) return;
   const known = offset => {
     const layer = state.layers[index + offset];
     return !layer || state.detail.has(layer.id) || state.detailPending.has(layer.id);
@@ -685,7 +715,7 @@ async function ensureDetail(index) {
   for (const id of wanted) state.detailPending.add(id);
   try {
     const payload = await api(`/api/v1/layers?${parameters}`);
-    for (const layer of payload.layers) state.detail.set(layer.id, layer);
+    for (const layer of payload.layers) rememberDetail(layer);
     applyStageAspect();
     // Only the parts that read detail; the timeline did not change.
     renderSelector();
@@ -716,8 +746,7 @@ function detailLoaded(layer) {
 }
 
 function reportCounts(extra = '') {
-  const completed = state.layers.filter(eligible).length;
-  const flagged = state.layers.filter(isFlagged).length;
+  const { eligibleCount: completed, flaggedCount: flagged } = series();
   const unavailable = state.layers.length - completed;
   const behind = state.unseen && !state.follow
     ? `  ${state.unseen} newer layer${state.unseen === 1 ? '' : 's'} arrived; press End or Live to catch up.`
@@ -755,7 +784,7 @@ async function poll() {
     const payload = await api(`/api/v1/layers?${parameters}`);
     // The poll returns full rows, so a layer that arrives live is already
     // detailed: following a build never waits for a second request.
-    for (const layer of payload.layers) state.detail.set(layer.id, layer);
+    for (const layer of payload.layers) rememberDetail(layer);
     const added = mergeLayers(payload.layers);
     state.latestId = Math.max(state.latestId, payload.latest_id || 0);
     if (added) {
@@ -844,6 +873,7 @@ function activateLayer(layer, userDriven = true) {
     if (state.follow !== isLast) setFollow(isLast);
   }
   renderSelection();
+  ensureDetail(selectedIndex());
   revealLayerChip(layer.id, state.scrubbing ? 'auto' : 'smooth');
   writeHash();
 }
@@ -894,6 +924,21 @@ function renderStage() {
   }
   const current = currentMedia(layer);
   if (!current) {
+    // Frames follow the finger along the timeline, and a drag crosses hundreds
+    // of layers whose detail is deliberately not fetched. The index names a
+    // chip image for every layer, so the drag shows that and says it is doing
+    // so; the evidence itself loads when the drag stops. It is captioned as a
+    // preview because with a published thumbnail role it is a small image shown
+    // large, and nobody should read a verdict off a softened picture.
+    const preview = state.scrubbing ? chosen?.preview_url : null;
+    if (preview) {
+      stageEmpty.hidden = true;
+      stageHint.textContent = `Layer ${layer.index}`;
+      stageImage.alt = `Layer ${layer.index} scrub preview`;
+      showImage(preview);
+      caption.textContent = `Scrub preview / layer ${layer.index} / release to load the evidence`;
+      return;
+    }
     // Waiting for this layer's detail and having none published are different
     // answers, and only the second is a fault worth reporting as one.
     const waiting = !detailLoaded(chosen);
@@ -905,7 +950,6 @@ function renderStage() {
     caption.textContent = waiting
       ? `Layer ${layer.index}`
       : 'Raw and diagnostic evidence unavailable.';
-    if (waiting) ensureDetail(selectedIndex());
     return;
   }
   stageEmpty.hidden = true;
@@ -919,7 +963,6 @@ function renderStage() {
   stageImage.alt = `Layer ${layer.index} ${mediaLabels[current.role] || current.role}`;
   showImage(current.url);
   prefetchAround(selectedIndex());
-  ensureDetail(selectedIndex());
   const dimensions = current.width && current.height ? `${current.width} x ${current.height}` : 'dimensions unavailable';
   caption.textContent = `${mediaLabels[current.role] || current.role} / ${dimensions}${current.stage ? ` / ${current.stage}` : ''}`;
 }
@@ -1000,13 +1043,13 @@ function renderSidebar() {
 function renderRunway() {
   const node = el('argon-runway');
   if (!node) return;
-  const { hours, ratePerHour, reason } = argonRunway();
+  const { hours, ratePerHour, reason } = series().runway;
   if (hours == null) {
     node.textContent = `Argon left: ${reason}.`;
     node.dataset.state = 'muted';
     return;
   }
-  const units = argonUnits();
+  const units = series().units;
   node.dataset.state = 'ok';
   const left = hours < 10 ? hours.toFixed(1) : Math.round(hours);
   node.textContent = `Argon left: ~${left} h at ${ratePerHour.toFixed(2)} ${units}/h`.trimEnd();
@@ -1234,7 +1277,7 @@ function fillChip(chip, layer, position, pitch, total) {
   // The index names the chip's image directly -- a published thumbnail where
   // the monitor sent one, otherwise the same view the chip would have chosen.
   // The chip does not wait for the layer's detail to know what to show.
-  const preview = layer.preview_url ?? preferredMedia(detailed(layer))?.url ?? null;
+  const preview = layer.preview_url ?? null;
   const image = chip.querySelector('img');
   const missing = chip.querySelector('.chip-missing');
   if (preview) {
@@ -1549,7 +1592,7 @@ function renderArgonChart() {
     }
   }
   if (low === Infinity) { label.textContent = 'unknown'; keepChartBase('#argon-chart', surface); return; }
-  const units = argonUnits();
+  const units = series().units;
   label.textContent = `${numeric(low)}-${numeric(high)} ${units}`.trim();
   for (const [channel, points] of byChannel) {
     const color = channelColors[(channel - 1) % channelColors.length];

@@ -125,7 +125,10 @@ does not bury the back button.
    `<print name> | <capture time>` strip along its top. Then check the viewer
    behaviours the operator depends on:
    - Press and drag along the timeline directly under the image; frames follow
-     the finger and the bubble names the layer being passed.
+     the finger and the bubble names the layer being passed. While dragging,
+     the frame is captioned as a scrub preview and the evidence for the layer
+     landed on loads when the drag stops -- a drag crosses hundreds of layers
+     and must not fetch a build's worth of them.
        Supported touch devices provide a light tick as the selected layer changes;
        unsupported browsers and reduced-motion sessions remain silent.
    - Switch among Before, After, Analysis and the detector views. The frame
@@ -244,6 +247,13 @@ pixels rather than the layers:
 - Because the whole build is loaded, the defect rate and the **Argon left**
   figure are computed over the build. They used to be fitted over however many
   pages had been loaded, so they moved when the operator pressed the button.
+  Both are recomputed when layers arrive rather than when the selection moves.
+- Layer detail is fetched when the selection settles, never while it is moving,
+  and what has been fetched is bounded. A drag across a 3,600-layer build costs
+  three requests, not one per layer passed.
+- A session longer than one index request is cut at its start, not its end: a
+  build in progress is watched through its newest layers. The notice says the
+  timeline was cut and that the figures cover only what it lists.
 
 ## Layout
 

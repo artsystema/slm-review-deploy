@@ -24,13 +24,13 @@ const SEVERITY_RANK = {
 };
 
 /** Severities that describe a layer with nothing wrong with it. */
-export const QUIET_SEVERITIES = new Set(['none', 'clear']);
+const QUIET_SEVERITIES = new Set(['none', 'clear']);
 
 export function severityToken(value) {
   return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
 }
 
-export function severityRank(token) {
+function severityRank(token) {
   return SEVERITY_RANK[token] ?? 1;
 }
 

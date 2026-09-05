@@ -13,8 +13,9 @@ final class ReviewRepository
     public const SUMMARY_VERSION = 1;
 
     /** At most this many rows are summarised on any one read, so a first
-     *  request against a long history cannot run past the execution limit. */
-    private const SUMMARY_FILL_LIMIT = 750;
+     *  request against a long history cannot run past the execution limit.
+     *  A session longer than this converges over a few reads. */
+    private const SUMMARY_FILL_LIMIT = 2000;
 
     public function __construct(private PDO $database)
     {
@@ -122,6 +123,11 @@ final class ReviewRepository
      * manifest here, which is why this answers correctly on the first request
      * after the migration and merely gets cheaper afterwards.
      *
+     * A session longer than the cap is cut at its *start*, not its end: the
+     * newest layers are the ones a build in progress is being watched through,
+     * and a timeline that dropped them would follow a layer hours behind the
+     * machine. The caller is told it was cut.
+     *
      * @return array{layers: list<array<string, mixed>>, truncated: bool}
      */
     public function sessionIndex(
@@ -138,16 +144,19 @@ final class ReviewRepository
                 FROM publications p
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id'
             . $this->scopeClause($unassigned)
-            . ' ORDER BY p.run_local_id ASC, p.layer_index ASC, p.id ASC LIMIT :limit';
+            . ' ORDER BY p.run_local_id DESC, p.layer_index DESC, p.id DESC LIMIT :limit';
         $statement = $this->database->prepare($sql);
         $this->bindScope($statement, $monitorId, $sessionId, $unassigned);
         $statement->bindValue('limit', $limit + 1, PDO::PARAM_INT);
         $statement->execute();
+        // Newest first so an over-long build loses its oldest layers, then back
+        // into build order for the timeline the viewer draws.
         $records = $statement->fetchAll();
         $truncated = count($records) > $limit;
         if ($truncated) {
             array_pop($records);
         }
+        $records = array_reverse($records);
 
         $layers = [];
         $pending = [];
@@ -203,7 +212,12 @@ final class ReviewRepository
         if ($summaries === []) {
             return;
         }
+        $started = false;
         try {
+            // One commit rather than one per row: the decode above is the work,
+            // and a few thousand autocommitted updates over a network socket
+            // would not be.
+            $started = !$this->database->inTransaction() && $this->database->beginTransaction();
             $statement = $this->database->prepare(
                 'UPDATE publications
                     SET summary_version = :version, deficit_area_frac = :deficit,
@@ -228,8 +242,14 @@ final class ReviewRepository
                     'id' => $id,
                 ]);
             }
+            if ($started) {
+                $this->database->commit();
+            }
         } catch (\PDOException) {
             // See the note above: the answer does not depend on this succeeding.
+            if ($started && $this->database->inTransaction()) {
+                $this->database->rollBack();
+            }
         }
     }
 
@@ -456,6 +476,10 @@ final class ReviewRepository
                 ?? $mediaByRole['raw_after']
                 ?? $mediaByRole['raw_before']
                 ?? null;
+            // Named the same way the session index names it, so a layer that
+            // arrives live through the poll gets the same filmstrip chip as one
+            // read from the index rather than the full evidence frame.
+            $previewSha = self::previewSha($manifest['media']);
             $rows[] = [
                 'id' => (int) $row['id'],
                 'run_local_id' => (int) $row['run_local_id'],
@@ -466,6 +490,9 @@ final class ReviewRepository
                 'argon_snapshot' => $manifest['argon_snapshot'],
                 'key_view_state' => $row['key_view_state'],
                 'key_view_url' => $keyView['url'] ?? null,
+                'preview_url' => $previewSha === null
+                    ? null
+                    : $basePath . '/api/v1/media/' . $previewSha,
                 // Which build published this layer. Null for rows written
                 // before the column existed and whose manifest could not be
                 // parsed by the backfill.
