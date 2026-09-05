@@ -134,6 +134,11 @@ does not bury the back button.
      the chip, or select any earlier layer, and confirm it stops following
      while still reporting that new layers arrived.
    - Repeat at a narrow mobile viewport without horizontal page overflow.
+   - On a session of a few thousand layers, hold **Load earlier** until the
+     whole build is loaded, then step with the arrows and drag the timeline.
+     The filmstrip keeps only the chips near the viewport in the page, so its
+     scrollbar is as long as the build while the strip itself stays responsive;
+     the selected chip must always end up highlighted and in view.
 4. Stop the server during a pass or temporarily use an invalid URL. Confirm
    the monitor continues normally and the agent reports a retry/backlog.
 5. Restore the URL and run `--once`; confirm no duplicate remote layer appears.
@@ -200,6 +205,27 @@ bash /home/khzr7u2xld10/slm-review-deploy/tools/deploy-cpanel.sh
 The script validates the production layout before copying anything and
 preserves `private/config.php`, frame data, `app-root.php`, and the public site
 `.htaccess`. It also denies direct web access to the private app and storage.
+
+## Viewer at build scale
+
+A session runs to thousands of layers, so the viewer is written against the
+pixels rather than the layers:
+
+- The filmstrip renders a window of chips over a rail as wide as the build,
+  reusing about thirty nodes as it scrolls, with one delegated click handler.
+  Chips outside the window leave the document so the browser can release the
+  thumbnails behind them.
+- The severity strip and both charts reduce to one column per device pixel,
+  keeping each column's extremes -- the worst severity, and the minimum and
+  maximum reading. A single flagged layer or a one-layer spike therefore still
+  paints on a build far longer than the strip is wide.
+- Series are recomputed when layers arrive, not when the selection moves.
+  Stepping a layer redraws the frame, the sidebar, the playhead and the chart
+  marker only.
+- `public/assets/review-core.js` holds that arithmetic with no DOM in it. Run
+  its tests with `node --test "remote-review/tests/*.test.mjs"`.
+- JSON responses are gzipped when the client accepts it and the host is not
+  already compressing them; a layer window compresses about ten to one.
 
 ## Layout
 

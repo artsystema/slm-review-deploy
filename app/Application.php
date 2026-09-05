@@ -298,7 +298,7 @@ final class Application
       </section>
     </main>
   </div>
-  <script src="assets/review.js" defer></script>
+  <script src="assets/review.js" type="module"></script>
 </body>
 </html>
 HTML;

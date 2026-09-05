@@ -111,8 +111,7 @@ final class Response
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store');
         header('X-Content-Type-Options: nosniff');
-        echo json_encode($value, JSON_THROW_ON_ERROR);
-        exit;
+        self::send(json_encode($value, JSON_THROW_ON_ERROR));
     }
 
     public static function html(string $html): never
@@ -121,7 +120,52 @@ final class Response
         header('Content-Type: text/html; charset=utf-8');
         header('Cache-Control: no-store');
         header('X-Content-Type-Options: nosniff');
-        echo $html;
+        self::send($html);
+    }
+
+    /**
+     * Write a text body, compressed when the client asked for it.
+     *
+     * A layer window is mostly repeated field names and identical metric keys,
+     * and measured against this monitor's own published manifests it compresses
+     * about ten to one. That matters here rather than in general: the reviewer
+     * is read over a plant uplink or a phone, and the host is shared cPanel
+     * where nothing guarantees the server has been configured to compress
+     * application/json for us.
+     *
+     * gzip is used rather than a longer-lived scheme because it is the only
+     * encoding PHP is certain to have. Compression is skipped for a body small
+     * enough that the round trip dominates anyway, and skipped entirely if the
+     * extension is missing so the response is still correct.
+     */
+    private static function send(string $body): never
+    {
+        $encodings = strtolower((string) ($_SERVER['HTTP_ACCEPT_ENCODING'] ?? ''));
+        // Any value other than off/0 turns PHP's own output compression on, a
+        // byte-size buffer included; compressing here as well would gzip the
+        // body twice and the browser would see nothing it could read.
+        $zlib = strtolower(trim((string) ini_get('zlib.output_compression')));
+        $serverCompresses = $zlib !== '' && $zlib !== '0' && $zlib !== 'off';
+        if (
+            strlen($body) >= 1024
+            && str_contains($encodings, 'gzip')
+            && function_exists('gzencode')
+            && !headers_sent()
+            && !$serverCompresses
+            && !in_array('Content-Encoding', array_map(
+                static fn (string $header): string => strstr($header, ':', true) ?: '',
+                headers_list(),
+            ), true)
+        ) {
+            $compressed = gzencode($body, 6);
+            if ($compressed !== false) {
+                header('Content-Encoding: gzip');
+                header('Vary: Accept-Encoding');
+                $body = $compressed;
+            }
+        }
+        header('Content-Length: ' . (string) strlen($body));
+        echo $body;
         exit;
     }
 

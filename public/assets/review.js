@@ -1,3 +1,15 @@
+import {
+  argonSeries,
+  decimate,
+  defectRateSeries,
+  eligible,
+  isFlagged,
+  scrollOffsetFor,
+  severityColumns,
+  severityToken,
+  visibleWindow,
+} from './review-core.js';
+
 const state = {
   sessions: [],
   layers: [],
@@ -94,7 +106,6 @@ const severityColors = {
   critical: '#e0523a',
   emergency: '#e0523a',
 };
-const quietSeverities = new Set(['none', 'clear']);
 
 // ---------- helpers ----------
 
@@ -113,9 +124,6 @@ async function api(path) {
 function selected() { return state.layers.find(layer => layer.id === state.selectedId) || state.layers.at(-1) || null; }
 function selectedIndex() { const i = state.layers.findIndex(layer => layer.id === state.selectedId); return i < 0 ? state.layers.length - 1 : i; }
 function escaped(value) { const element = document.createElement('span'); element.textContent = String(value); return element.innerHTML; }
-function isFlagged(layer) { return layer.analysis.status === 'completed' && layer.analysis.severity !== 'none'; }
-function eligible(layer) { return layer.analysis.status === 'completed'; }
-function severityToken(value) { return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9_-]/g, '-'); }
 function clamp(value, low, high) { return Math.min(high, Math.max(low, value)); }
 function numeric(value) { return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : 'unknown'; }
 function percent(value) { return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : 'unknown'; }
@@ -218,7 +226,31 @@ function mergeLayers(incoming) {
     byId.set(layer.id, layer);
   }
   state.layers = [...byId.values()].sort(byBuildOrder);
+  invalidateSeries();
   return added;
+}
+
+// ---------- derived series ----------
+// The defect rate and the argon channels are functions of the whole loaded
+// list, so they are computed once per change to that list rather than once per
+// keystroke. A build of thousands of layers is stepped through one layer at a
+// time; recomputing every series on every step is what made the arrow keys
+// feel like the page had died.
+
+let seriesCache = null;
+
+function invalidateSeries() { seriesCache = null; }
+
+function series() {
+  if (seriesCache) return seriesCache;
+  const windowSize = Math.min(40, Math.max(1, state.layers.length));
+  seriesCache = {
+    windowSize,
+    defect: defectRateSeries(state.layers, windowSize),
+    argon: argonSeries(state.layers),
+    eligibleCount: state.layers.reduce((count, layer) => count + (eligible(layer) ? 1 : 0), 0),
+  };
+  return seriesCache;
 }
 
 // ---------- image cache ----------
@@ -227,15 +259,24 @@ function mergeLayers(incoming) {
 // flicker, so decoded images are kept and only decoded ones are shown at once.
 
 const imageCache = new Map();
-const IMAGE_CACHE_LIMIT = 120;
+// Budgeted in pixels rather than frames, because the frames are not small: a
+// 1280x960 evidence frame is about five megabytes once decoded, so a cache of
+// a hundred and twenty of them is most of a gigabyte on the phone that is
+// meant to be reviewing a build in a corridor. This budget is roughly twenty
+// full frames -- comfortably more than the prefetch radius and the all-views
+// grid ask for at once.
+const IMAGE_CACHE_PIXELS = 24e6;
+const ASSUMED_PIXELS = 1280 * 960;
+let cachedPixels = 0;
 
 function trimImageCache() {
   // Insertion-ordered, so the oldest entries are the front of the map. The
   // frame on screen is re-inserted by showImage and so is never evicted.
-  while (imageCache.size > IMAGE_CACHE_LIMIT) {
-    const oldest = imageCache.keys().next().value;
-    if (oldest === stageImage.dataset.pending) break;
-    imageCache.delete(oldest);
+  for (const [url, entry] of imageCache) {
+    if (cachedPixels <= IMAGE_CACHE_PIXELS) break;
+    if (url === stageImage.dataset.pending) continue;
+    cachedPixels -= entry.pixels;
+    imageCache.delete(url);
   }
 }
 
@@ -244,11 +285,16 @@ function cached(url) {
   let entry = imageCache.get(url);
   if (!entry) {
     const image = new Image();
-    entry = { image, ready: false };
+    entry = { image, ready: false, pixels: ASSUMED_PIXELS };
     imageCache.set(url, entry);
+    cachedPixels += entry.pixels;
     image.decoding = 'async';
     image.addEventListener('load', () => {
       entry.ready = true;
+      if (imageCache.get(url) === entry) {
+        cachedPixels += (image.naturalWidth * image.naturalHeight) - entry.pixels;
+        entry.pixels = image.naturalWidth * image.naturalHeight;
+      }
       if (stageImage.dataset.pending === url) showImage(url);
     });
     image.addEventListener('error', () => { entry.failed = true; });
@@ -560,6 +606,7 @@ async function loadLayers(reset = true) {
       state.stageAspect = null;
       state.selectedMediaRole = null;
       imageCache.clear();
+      cachedPixels = 0;
       resetZoom();
     }
     mergeLayers(payload.layers);
@@ -672,14 +719,29 @@ function setFollow(following) {
 
 // ---------- rendering ----------
 
-function render() {
+/**
+ * Everything that depends on which layer is selected, and nothing that does not.
+ *
+ * Stepping a layer moves a highlight, a frame and a playhead. It does not
+ * change the timeline, the severity strip or either chart, so those are left
+ * alone: redrawing them per keystroke cost most of a second on a long build.
+ */
+function renderSelection() {
   renderSelector();
   renderStage();
   renderSidebar();
+  markSelectedChip();
+  positionPlayhead();
+  drawChartSelection();
+}
+
+/** Everything above, plus the parts that change only when layers arrive. */
+function render() {
   renderScrubber();
   renderFilmstrip();
   renderDefectChart();
   renderArgonChart();
+  renderSelection();
 }
 
 function activateLayer(layer, userDriven = true) {
@@ -691,7 +753,7 @@ function activateLayer(layer, userDriven = true) {
     const isLast = state.layers.at(-1)?.id === layer.id;
     if (state.follow !== isLast) setFollow(isLast);
   }
-  render();
+  renderSelection();
   revealLayerChip(layer.id, state.scrubbing ? 'auto' : 'smooth');
   writeHash();
 }
@@ -854,35 +916,41 @@ function renderScrubber() {
   const context = scrubCanvas.getContext('2d');
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, width, height);
+  scrubber.setAttribute('aria-valuemax', String(Math.max(0, total - 1)));
+  if (!total) { positionPlayhead(); return; }
 
+  // One column per device pixel rather than one per layer: a build of thousands
+  // has more layers than the strip has columns, and each column is given to the
+  // worst layer that falls in it. The reduction is chosen so that a single
+  // flagged layer still paints -- losing it in an average is the one outcome
+  // this strip may not have.
+  const columns = severityColumns(state.layers, Math.max(1, Math.round(width * ratio)));
+  const columnWidth = width / columns.length;
+  const barWidth = Math.max(1, columnWidth - (columnWidth > 3 ? 1 : 0));
+  for (let column = 0; column < columns.length; column += 1) {
+    const { token, eligible: measured, quiet } = columns[column];
+    context.fillStyle = measured ? (severityColors[token] || '#8b93a1') : '#333a47';
+    const barHeight = quiet ? height * 0.42 : height;
+    context.fillRect(column * columnWidth, (height - barHeight) / 2, barWidth, barHeight);
+  }
+  positionPlayhead();
+}
+
+/** The parts of the timeline that move with the selection alone. */
+function positionPlayhead() {
+  const total = state.layers.length;
   const at = selectedIndex();
   timelineCount.textContent = total
     ? `Layer ${state.layers[at]?.index ?? '?'} · ${at + 1} of ${total}`
     : 'no layers';
-  scrubber.setAttribute('aria-valuemax', String(Math.max(0, total - 1)));
-  scrubber.setAttribute('aria-valuenow', String(total ? selectedIndex() : 0));
+  scrubber.setAttribute('aria-valuenow', String(total ? at : 0));
   const current = selected();
   scrubber.setAttribute('aria-valuetext', current
     ? `Layer ${current.index}, ${current.analysis.severity || 'unknown'}`
     : 'No layers');
   if (!total) { playhead.hidden = true; return; }
-
-  // One column per layer, widened to stay visible when a session outruns the
-  // pixel budget. Severity is the only thing the strip encodes.
-  const columnWidth = Math.max(1, width / total);
-  const barWidth = Math.max(1, columnWidth - (columnWidth > 3 ? 1 : 0));
-  for (let index = 0; index < total; index += 1) {
-    const layer = state.layers[index];
-    const token = severityToken(layer.analysis.severity);
-    const quiet = !eligible(layer) || quietSeverities.has(token);
-    context.fillStyle = eligible(layer) ? (severityColors[token] || '#8b93a1') : '#333a47';
-    const barHeight = quiet ? height * 0.42 : height;
-    context.fillRect(x0(index), (height - barHeight) / 2, barWidth, barHeight);
-  }
-
-  function x0(index) { return index * width / total; }
   playhead.hidden = false;
-  playhead.style.left = `${((selectedIndex() + 0.5) / total) * 100}%`;
+  playhead.style.left = `${((at + 0.5) / total) * 100}%`;
 }
 
 function indexFromPointer(clientX) {
@@ -940,8 +1008,10 @@ function scrubTo(index, clientX) {
       state.selectedId = layer.id;
       // Only the parts that change per frame; the sidebar and charts follow on
       // release so a fast drag is not re-laying out the whole page each frame.
+      // The severity strip is a function of the layers, not of the selection,
+      // so the drag moves the playhead over a bitmap that is already drawn.
       renderStage();
-      renderScrubber();
+      positionPlayhead();
       markSelectedChip();
     }
   });
@@ -991,37 +1061,157 @@ scrubber.addEventListener('pointerleave', () => { if (!state.scrubbing) bubble.h
 
 // ---------- filmstrip ----------
 
-function renderFilmstrip() {
-  const scrollLeft = filmstrip.scrollLeft;
-  filmstrip.replaceChildren();
-  for (const layer of state.layers) {
-    const chip = document.createElement('button');
-    chip.className = `layer-chip ${layer.id === state.selectedId ? 'selected' : ''}`;
-    chip.dataset.layerId = String(layer.id);
-    chip.dataset.severity = severityToken(layer.analysis.severity);
-    chip.type = 'button';
-    chip.role = 'option';
-    chip.ariaSelected = String(layer.id === state.selectedId);
-    const preview = preferredMedia(layer);
-    chip.innerHTML = preview
-      ? `<img loading="lazy" src="${escaped(preview.url)}" alt="Layer ${layer.index} evidence preview">`
-      : '<div class="chip-missing">NO KEY VIEW</div>';
-    const deficit = typeof layer.analysis.deficit_area_frac === 'number'
-      ? `${percent(layer.analysis.deficit_area_frac)} deficit`
-      : layer.analysis.status;
-    chip.insertAdjacentHTML('beforeend', `<span class="chip-copy">`
-      + `<span><b>Layer ${layer.index}</b>`
-      + `<span class="severity-label">${escaped(layer.analysis.severity || 'unknown')}</span></span>`
-      + `<span class="chip-meta"><span>${escaped(shortStamp(layer.captured_at))}</span>`
-      + `<span>${escaped(deficit || 'unknown')}</span></span></span>`);
-    chip.addEventListener('click', () => activateLayer(layer));
-    filmstrip.append(chip);
-  }
-  filmstrip.scrollLeft = scrollLeft;
+/**
+ * The filmstrip renders a window, not a build.
+ *
+ * A rail as wide as the whole session gives the scrollbar its true length, and
+ * only the chips over the viewport are in the document -- about thirty of them,
+ * reused in place as the strip scrolls. Building a chip per layer put 36,000
+ * nodes and 4,000 thumbnail decodes on the page for a long build, which is what
+ * made loading the earlier batches feel like the tab had stopped.
+ *
+ * Each chip stays a real focusable option; `aria-setsize` and `aria-posinset`
+ * tell assistive technology where it sits in the build, which is how a listbox
+ * that renders a window is expected to describe itself.
+ */
+const CHIP_OVERSCAN = 6;
+const chipPool = [];
+let chipRail = null;
+let scrollFrame = 0;
+let renderedFirst = -1;
+let renderedCount = 0;
+// Where the strip has been told to go but has not arrived yet. A smooth scroll
+// takes several frames, and until it lands the scroll position still describes
+// where the operator was, not the layer now selected -- so the window covers
+// both and the selected chip is never missing from the document.
+let targetScrollLeft = null;
+
+function chipMetrics() {
+  const styles = getComputedStyle(filmstrip);
+  const width = Number.parseFloat(styles.getPropertyValue('--chip-width')) || 116;
+  const gap = Number.parseFloat(styles.getPropertyValue('--chip-gap')) || 5;
+  return { width, pitch: width + gap };
 }
 
+function ensureRail() {
+  if (chipRail) return chipRail;
+  chipRail = document.createElement('div');
+  chipRail.className = 'filmstrip-rail';
+  filmstrip.append(chipRail);
+  return chipRail;
+}
+
+function buildChip() {
+  const chip = document.createElement('button');
+  chip.className = 'layer-chip';
+  chip.type = 'button';
+  chip.role = 'option';
+  chip.innerHTML = '<img alt="" decoding="async"><div class="chip-missing" hidden>NO KEY VIEW</div>'
+    + '<span class="chip-copy"><span><b></b><span class="severity-label"></span></span>'
+    + '<span class="chip-meta"><span></span><span></span></span></span>';
+  return chip;
+}
+
+/** Point an already-built chip at a different layer. No nodes are created. */
+function fillChip(chip, layer, position, pitch, total) {
+  chip.style.transform = `translateX(${position * pitch}px)`;
+  chip.dataset.layerId = String(layer.id);
+  chip.dataset.severity = severityToken(layer.analysis.severity);
+  chip.ariaSetSize = String(total);
+  chip.ariaPosInSet = String(position + 1);
+  const isSelected = layer.id === state.selectedId;
+  chip.classList.toggle('selected', isSelected);
+  chip.ariaSelected = String(isSelected);
+  const preview = preferredMedia(layer);
+  const image = chip.querySelector('img');
+  const missing = chip.querySelector('.chip-missing');
+  if (preview) {
+    if (image.getAttribute('src') !== preview.url) image.src = preview.url;
+    image.alt = `Layer ${layer.index} evidence preview`;
+    image.hidden = false;
+    missing.hidden = true;
+  } else {
+    image.removeAttribute('src');
+    image.hidden = true;
+    missing.hidden = false;
+  }
+  const deficit = typeof layer.analysis.deficit_area_frac === 'number'
+    ? `${percent(layer.analysis.deficit_area_frac)} deficit`
+    : layer.analysis.status;
+  const [title, severityLabel] = chip.querySelectorAll('.chip-copy b, .severity-label');
+  title.textContent = `Layer ${layer.index}`;
+  severityLabel.textContent = layer.analysis.severity || 'unknown';
+  const [stamp, measure] = chip.querySelectorAll('.chip-meta span');
+  stamp.textContent = shortStamp(layer.captured_at);
+  measure.textContent = deficit || 'unknown';
+}
+
+/** The chips on screen, plus the ones a scroll in flight is heading for. */
+function chipWindow(total, pitch) {
+  const live = visibleWindow(filmstrip.scrollLeft, filmstrip.clientWidth, pitch, total, CHIP_OVERSCAN);
+  if (targetScrollLeft === null) return live;
+  const target = visibleWindow(targetScrollLeft, filmstrip.clientWidth, pitch, total, CHIP_OVERSCAN);
+  if (!live.count || !target.count) return live.count ? live : target;
+  const first = Math.min(live.first, target.first);
+  const count = Math.max(live.first + live.count, target.first + target.count) - first;
+  // A manual scroll during a programmed one could stretch the union across the
+  // build; past a few screenfuls the destination is abandoned rather than
+  // rendered, since the operator has taken the strip somewhere else.
+  if (count > live.count * 4) {
+    targetScrollLeft = null;
+    return live;
+  }
+  return { first, count };
+}
+
+function renderFilmstrip(force = true) {
+  const total = state.layers.length;
+  const rail = ensureRail();
+  const { width, pitch } = chipMetrics();
+  rail.style.width = `${Math.max(0, total * pitch - (pitch - width))}px`;
+  const { first, count } = chipWindow(total, pitch);
+  if (!force && first === renderedFirst && count === renderedCount) return;
+  for (let offset = 0; offset < count; offset += 1) {
+    let chip = chipPool[offset];
+    if (!chip) {
+      chip = buildChip();
+      chipPool[offset] = chip;
+      rail.append(chip);
+    } else if (chip.parentNode !== rail) {
+      rail.append(chip);
+    }
+    fillChip(chip, state.layers[first + offset], first + offset, pitch, total);
+  }
+  for (let offset = count; offset < chipPool.length; offset += 1) {
+    // Left in the pool but out of the document, so the browser can drop the
+    // decoded thumbnail behind it rather than holding a build's worth of them.
+    chipPool[offset].remove();
+    chipPool[offset].querySelector('img').removeAttribute('src');
+  }
+  renderedFirst = first;
+  renderedCount = count;
+}
+
+// One listener on the strip instead of one per layer: a chip is identified by
+// the layer id it is currently pointed at, and the pool reuses the nodes.
+filmstrip.addEventListener('click', event => {
+  const chip = event.target.closest?.('.layer-chip');
+  if (!chip || !filmstrip.contains(chip)) return;
+  const layer = state.layers.find(item => String(item.id) === chip.dataset.layerId);
+  if (layer) activateLayer(layer);
+});
+
+filmstrip.addEventListener('scroll', () => {
+  if (targetScrollLeft !== null && Math.abs(filmstrip.scrollLeft - targetScrollLeft) <= 1) {
+    targetScrollLeft = null;
+  }
+  if (scrollFrame) return;
+  scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; renderFilmstrip(false); });
+}, { passive: true });
+
 function markSelectedChip() {
-  for (const chip of filmstrip.children) {
+  for (const chip of chipPool) {
+    if (!chip.parentNode) continue;
     const isSelected = chip.dataset.layerId === String(state.selectedId);
     chip.classList.toggle('selected', isSelected);
     chip.ariaSelected = String(isSelected);
@@ -1029,14 +1219,20 @@ function markSelectedChip() {
 }
 
 function revealLayerChip(layerId, behavior) {
-  const chip = filmstrip.querySelector(`[data-layer-id="${layerId}"]`);
-  if (!chip) return;
-  const chipBounds = chip.getBoundingClientRect();
-  const stripBounds = filmstrip.getBoundingClientRect();
-  const left = filmstrip.scrollLeft + chipBounds.left - stripBounds.left
-    - (filmstrip.clientWidth - chipBounds.width) / 2;
-  if (behavior === 'auto') filmstrip.scrollLeft = Math.max(0, left);
-  else filmstrip.scrollTo({ left: Math.max(0, left), behavior });
+  const index = state.layers.findIndex(layer => layer.id === layerId);
+  if (index < 0) return;
+  const { width, pitch } = chipMetrics();
+  const left = scrollOffsetFor(index, pitch, width, filmstrip.clientWidth, state.layers.length);
+  targetScrollLeft = left;
+  // Gliding across a build the strip is not rendering would run over blanks,
+  // and after a scrubber drag the destination is usually a long way off. Past a
+  // screenful the strip jumps, which is what "take me there" means anyway.
+  const far = Math.abs(left - filmstrip.scrollLeft) > filmstrip.clientWidth;
+  if (behavior === 'auto' || far) filmstrip.scrollLeft = left;
+  else filmstrip.scrollTo({ left, behavior });
+  // The scroll event settles the window, but a chip revealed without moving the
+  // strip -- the selection was already on screen -- would never fire one.
+  renderFilmstrip(false);
 }
 
 // ---------- stage gestures ----------
@@ -1155,7 +1351,36 @@ function canvasContext(id) {
   const context = canvas.getContext('2d');
   context.scale(ratio, ratio);
   context.clearRect(0, 0, width, height);
-  return { context, width, height };
+  return { canvas, context, width, height, ratio };
+}
+
+// The plotted series change only when layers arrive; the marker moves with
+// every keystroke. Keeping the drawn series on an offscreen copy means moving
+// the marker costs one blit rather than replotting a build.
+const chartBases = new Map();
+
+function keepChartBase(id, surface) {
+  let base = chartBases.get(id);
+  if (!base) { base = document.createElement('canvas'); chartBases.set(id, base); }
+  base.width = surface.canvas.width;
+  base.height = surface.canvas.height;
+  if (base.width && base.height) base.getContext('2d').drawImage(surface.canvas, 0, 0);
+  drawSelection(surface.context, surface.width, surface.height);
+}
+
+function drawChartSelection() {
+  for (const id of ['#defect-chart', '#argon-chart']) {
+    const base = chartBases.get(id);
+    const canvas = document.querySelector(id);
+    if (!base || !canvas || !base.width || !base.height) continue;
+    const context = canvas.getContext('2d');
+    const ratio = window.devicePixelRatio || 1;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(base, 0, 0);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawSelection(context, canvas.clientWidth, canvas.clientHeight);
+  }
 }
 
 function grid(context, width, height) {
@@ -1183,47 +1408,36 @@ function drawSelection(context, width, height) {
 }
 
 function renderDefectChart() {
-  const { context, width, height } = canvasContext('#defect-chart');
+  const surface = canvasContext('#defect-chart');
+  const { context, width, height } = surface;
   grid(context, width, height);
-  const windowSize = Math.min(40, Math.max(1, state.layers.length));
-  const points = state.layers.map((layer, index) => {
-    const windowLayers = state.layers.slice(Math.max(0, index - windowSize + 1), index + 1).filter(eligible);
-    return windowLayers.length ? windowLayers.filter(isFlagged).length / windowLayers.length : null;
-  });
-  const eligibleCount = state.layers.filter(eligible).length;
-  const last = points.at(-1);
+  const { defect, windowSize, eligibleCount } = series();
+  const last = defect.at(-1);
   el('defect-rate').textContent = last == null ? '--' : percent(last);
   el('defect-note').textContent = `${eligibleCount}/${state.layers.length} completed eligible layers in this loaded range. Window: ${windowSize} layers.`;
-  drawLine(context, points, width, height, '#4da3ff', value => 1 - value);
-  drawSelection(context, width, height);
+  drawLine(context, defect, width, height, '#4da3ff', value => 1 - value);
+  keepChartBase('#defect-chart', surface);
 }
 
 function renderArgonChart() {
-  const { context, width, height } = canvasContext('#argon-chart');
+  const surface = canvasContext('#argon-chart');
+  const { context, width, height } = surface;
   grid(context, width, height);
-  const byChannel = new Map();
-  state.layers.forEach((layer, layerIndex) => {
-    const current = new Map((layer.argon_snapshot.channels || []).map(channel => [channel.channel, channel]));
-    for (const [channel, points] of byChannel) {
-      const reading = current.get(channel);
-      points.push(reading?.reading_status === 'ok' && typeof reading.value === 'number' ? reading.value : null);
-    }
-    for (const [channel, reading] of current) {
-      if (byChannel.has(channel)) continue;
-      byChannel.set(channel, [
-        ...Array(layerIndex).fill(null),
-        reading.reading_status === 'ok' && typeof reading.value === 'number' ? reading.value : null,
-      ]);
-    }
-  });
-  const values = [...byChannel.values()].flat().filter(value => value != null);
+  const byChannel = series().argon;
   const label = el('argon-label');
   const legend = el('argon-legend');
   legend.replaceChildren();
-  if (!values.length) { label.textContent = 'unknown'; return; }
-  const low = Math.min(...values);
-  const high = Math.max(...values);
-  const units = state.layers.flatMap(layer => layer.argon_snapshot.channels || []).find(channel => channel.units)?.units || '';
+  let low = Infinity;
+  let high = -Infinity;
+  for (const points of byChannel.values()) {
+    for (const value of points) {
+      if (value == null) continue;
+      if (value < low) low = value;
+      if (value > high) high = value;
+    }
+  }
+  if (low === Infinity) { label.textContent = 'unknown'; keepChartBase('#argon-chart', surface); return; }
+  const units = argonUnits();
   label.textContent = `${numeric(low)}-${numeric(high)} ${units}`.trim();
   for (const [channel, points] of byChannel) {
     const color = channelColors[(channel - 1) % channelColors.length];
@@ -1235,25 +1449,50 @@ function renderArgonChart() {
     legend.append(legendItem);
     drawLine(context, points, width, height, color, value => (high === low ? 0.5 : (high - value) / (high - low)), true);
   }
-  drawSelection(context, width, height);
+  keepChartBase('#argon-chart', surface);
 }
 
+/** The units the gauges report in, from the first layer that states them. */
+function argonUnits() {
+  for (const layer of state.layers) {
+    for (const channel of layer.argon_snapshot?.channels || []) {
+      if (channel.units) return channel.units;
+    }
+  }
+  return '';
+}
+
+/**
+ * Plot a per-layer series into the width available.
+ *
+ * Two things keep this bounded on a long build. The series is first reduced to
+ * the chart's own columns, keeping each column's extremes so a single-layer
+ * spike still shows. Then each unbroken run is stroked once, rather than once
+ * per point: stroking inside the loop re-rasterises the whole path every time,
+ * which turned a four-thousand-layer argon chart into half a second of work.
+ */
 function drawLine(context, points, width, height, color, normalise, stepped = false) {
   context.strokeStyle = color;
   context.lineWidth = 2;
   context.lineJoin = 'round';
+  const span = Math.max(1, points.length - 1);
+  const samples = decimate(points, Math.max(1, Math.round(width)));
   let open = false;
   let previousY = 0;
-  points.forEach((value, index) => {
-    if (value == null) { open = false; return; }
-    const x = points.length === 1 ? width / 2 : index * width / (points.length - 1);
+  for (const { index, value } of samples) {
+    if (value == null) {
+      if (open) context.stroke();
+      open = false;
+      continue;
+    }
+    const x = points.length === 1 ? width / 2 : index * width / span;
     const y = 12 + normalise(value) * (height - 28);
     if (!open) { context.beginPath(); context.moveTo(x, y); open = true; }
     else if (stepped) { context.lineTo(x, previousY); context.lineTo(x, y); }
     else { context.lineTo(x, y); }
-    context.stroke();
     previousY = y;
-  });
+  }
+  if (open) context.stroke();
 }
 
 // ---------- wiring ----------
@@ -1271,7 +1510,11 @@ window.addEventListener('hashchange', () => { applyHash().catch(error => setNoti
 
 new ResizeObserver(() => renderScrubber()).observe(scrubber);
 
-window.addEventListener('resize', () => { if (state.layers.length) { renderScrubber(); renderDefectChart(); renderArgonChart(); } clampPan(); applyTransform(); });
+window.addEventListener('resize', () => {
+  if (state.layers.length) { renderScrubber(); renderFilmstrip(); renderDefectChart(); renderArgonChart(); drawChartSelection(); }
+  clampPan();
+  applyTransform();
+});
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) schedulePoll(300); });
 

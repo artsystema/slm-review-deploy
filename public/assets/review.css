@@ -746,9 +746,12 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
 
 .load-earlier:hover { border-color: var(--accent); }
 
+/* The chip pitch is read back by the viewer to work out which chips a scroll
+   position puts on screen, so it lives here as the one definition of it. */
 .filmstrip {
-  display: flex;
-  gap: 5px;
+  --chip-width: 116px;
+  --chip-gap: 5px;
+
   min-height: 105px;
   border-top: 1px solid var(--border);
   overflow-x: auto;
@@ -758,12 +761,21 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
   scrollbar-width: thin;
 }
 
+/* A rail as wide as the whole build gives the scrollbar its true length while
+   only the chips over the viewport exist. */
+.filmstrip-rail { position: relative; height: 92px; }
+
 .layer-chip {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
   display: grid;
-  flex: 0 0 116px;
-  grid-template-rows: 68px auto;
-  transition: border-color 120ms ease-out, transform 120ms ease-out;
+  width: var(--chip-width);
+  /* Positioned chips no longer take their height from a flex line, so the row
+     that used to stretch them is stated: thumbnail over two lines of copy. */
+  height: 100%;
+  grid-template-rows: 68px minmax(0, 1fr);
+  transition: border-color 120ms ease-out;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -775,7 +787,7 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
 }
 
 .layer-chip::before { position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; width: 3px; background: var(--severity-color, var(--text-dim)); content: ""; }
-.layer-chip:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.layer-chip:hover { border-color: var(--border-strong); background: var(--panel-3); }
 .layer-chip.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .layer-chip.selected::after { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgb(77 163 255 / 18%); content: ""; }
 .layer-chip[data-severity="none"] { --severity-color: var(--ok); }
@@ -786,6 +798,10 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
 
 .layer-chip img,
 .chip-missing { display: grid; width: 100%; height: 68px; object-fit: cover; place-items: center; background: #0e1116; color: var(--text-dim); font-size: 9px; }
+/* The display rules above outrank the browser's own [hidden], and a recycled
+   chip switches between a thumbnail and the missing-view note. */
+.layer-chip img[hidden],
+.chip-missing[hidden] { display: none; }
 .chip-copy { display: grid; gap: 3px; padding: 6px 7px 6px 9px; font-size: 9px; }
 .chip-copy > span:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
 .chip-copy b { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -814,7 +830,6 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
 
 @media (prefers-reduced-motion: reduce) {
   .filmstrip { scroll-behavior: auto; }
-  .layer-chip:hover { transform: none; }
   .stage-image,
   .stage-controls,
   .scrub-playhead::after { transition: none; }
@@ -849,7 +864,7 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
   .brand small { display: none; }
   .notice { align-items: flex-start; }
   .evidence-selector button { min-width: 78px; }
-  .layer-chip { flex-basis: 102px; }
+  .filmstrip { --chip-width: 102px; }
   .follow-toggle { padding: 3px 8px; }
   .timeline-foot .keyboard-hint { display: none; }
 }
