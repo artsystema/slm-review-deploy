@@ -980,8 +980,12 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .argon-panel { margin-top: 0; }
   .chart-card { min-height: 200px; }
   .scrubber { height: 78px; }
-  .transport-button { width: 36px; height: 36px; }
-  .transport-button svg { width: 18px; height: 18px; }
+  /* 32, not 36: six of these and the layer readout share a phone's width, and
+     at 36 they overran it by eight pixels and pushed the readout onto its own
+     line. Still a thumb's target, which 22 was not. */
+  .transport-button { width: 32px; height: 32px; }
+  .transport-button svg { width: 17px; height: 17px; }
+  .timeline-foot { gap: 8px; }
   .navigator { height: 48px; }
   .filmstrip { min-height: 96px; }
 }

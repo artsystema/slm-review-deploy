@@ -1408,8 +1408,12 @@ function positionPlayhead() {
   const basis = total ? series().basis : 'unknown';
   const qualifier = ELAPSED_QUALIFIER[basis] ?? '';
   const since = elapsed == null ? '' : ` · ${formatElapsed(elapsed)}${qualifier}`;
+  // Terse on purpose: six controls and this line share a phone's width, and the
+  // controls are sized for a thumb rather than a cursor, so the line gives way.
+  // `L` matches the scrub bubble, and the slider's aria-valuetext still spells
+  // it out for anything reading the page aloud.
   timelineCount.textContent = total
-    ? `Layer ${state.layers[at]?.index ?? '?'} · ${at + 1} of ${total}${since}`
+    ? `L${state.layers[at]?.index ?? '?'} · ${at + 1}/${total}${since}`
     : 'no layers';
   timelineCount.title = elapsed == null ? '' : ELAPSED_MEANING[basis];
   scrubber.setAttribute('aria-valuenow', String(total ? at : 0));
