@@ -648,7 +648,10 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
  */
 .navigator {
   position: relative;
-  height: 22px;
+  /* Twice what it was: it carries the whole build's severity at a glance and
+     its grips have to be grabbable with a thumb, neither of which a hairline
+     manages. */
+  height: 44px;
   border-top: 1px solid var(--border);
   background: var(--panel-3);
   cursor: pointer;
@@ -975,6 +978,7 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .argon-panel { margin-top: 0; }
   .chart-card { min-height: 200px; }
   .scrubber { height: 78px; }
+  .navigator { height: 48px; }
   .filmstrip { min-height: 96px; }
 }
 
