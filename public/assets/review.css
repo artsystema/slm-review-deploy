@@ -353,6 +353,40 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 }
 
 /*
+ * Waiting for a layer's evidence, as opposed to waiting for one image to
+ * decode. The frame already on screen is held and a sheen passes over it, so
+ * the panel neither blanks nor changes height while the request is out. The
+ * pseudo-element is painted before the stage's children and takes no pointer
+ * events, so the zoom and swipe handlers underneath are untouched.
+ */
+.stage.is-waiting .stage-image { opacity: .5; }
+
+.stage.is-waiting::before {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 18%,
+    rgb(255 255 255 / 7%) 44%,
+    rgb(255 255 255 / 7%) 56%,
+    transparent 82%
+  );
+  background-size: 260% 100%;
+  animation: stage-sheen 1.3s linear infinite;
+  content: "";
+  pointer-events: none;
+}
+
+@keyframes stage-sheen {
+  from { background-position: 130% 0; }
+  to { background-position: -130% 0; }
+}
+
+/* The tab row keeps its place while a layer's detail is in flight; only a
+   session with no media at all collapses it. */
+.evidence-selector { min-height: 36px; }
+
+/*
  * A contact sheet, not a gallery: four across so the eight published views land
  * as two rows. The 1px gap is the panel showing through, which separates the
  * tiles without spending any width on borders.
@@ -952,6 +986,8 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 .chip-copy .chip-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
+  .stage.is-waiting::before,
+  .stage.is-loading::after { animation: none; }
   .filmstrip { scroll-behavior: auto; }
   .stage-image,
   .stage-controls,

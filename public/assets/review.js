@@ -1080,10 +1080,23 @@ function stepLayer(offset) {
 
 function renderSelector() {
   const selector = el('evidence-selector');
-  const layer = detailed(selected());
+  const chosen = selected();
+  const layer = detailed(chosen);
   const media = layer ? layerMedia(layer) : [];
   const current = currentMedia(layer);
-  const shown = current?.role ?? null;
+  const shown = current?.role ?? state.selectedMediaRole;
+  // While a layer's detail is still coming, keep the tabs already on screen.
+  // Which views exist is a property of the session's publication set, not of
+  // one layer, and emptying the row collapsed it -- taking 47px out of the
+  // panel and putting it back a moment later, under the operator's thumb.
+  if (!media.length && !detailLoaded(chosen) && selector.children.length) {
+    for (const button of selector.children) {
+      const isShown = button.dataset.role === shown;
+      button.className = isShown ? 'selected' : '';
+      button.setAttribute('aria-selected', String(isShown));
+    }
+    return;
+  }
   selector.replaceChildren();
   for (const item of media) {
     const button = document.createElement('button');
@@ -1092,6 +1105,7 @@ function renderSelector() {
     button.className = item.role === shown ? 'selected' : '';
     button.setAttribute('aria-selected', String(item.role === shown));
     button.textContent = mediaLabels[item.role] || item.role;
+    button.dataset.role = item.role;
     button.addEventListener('click', () => {
       state.selectedMediaRole = item.role;
       renderSelector();
@@ -1127,6 +1141,7 @@ function renderStage() {
     // large, and nobody should read a verdict off a softened picture.
     const preview = moving() ? chosen?.preview_url : null;
     if (preview) {
+      stage.classList.remove('is-waiting');
       stageEmpty.hidden = true;
       stageHint.textContent = `Layer ${layer.index}`;
       stageImage.alt = `Layer ${layer.index} scrub preview`;
@@ -1136,17 +1151,26 @@ function renderStage() {
     }
     // Waiting for this layer's detail and having none published are different
     // answers, and only the second is a fault worth reporting as one.
-    const waiting = !detailLoaded(chosen);
+    if (!detailLoaded(chosen)) {
+      // Hold whatever frame is on screen rather than blanking to a line of
+      // text. The evidence is on its way, and clearing the panel to say so is
+      // the most disruptive way of saying it -- and it would not be the held
+      // view anyway. The shimmer carries the message instead.
+      stage.classList.add('is-waiting');
+      stageHint.textContent = `Layer ${layer.index}`;
+      stageEmpty.hidden = Boolean(stageImage.getAttribute('src'));
+      stageEmpty.textContent = 'Loading this layer’s evidence…';
+      caption.textContent = `Layer ${layer.index} · loading evidence`;
+      return;
+    }
+    stage.classList.remove('is-waiting');
     showImage(null);
     stageEmpty.hidden = false;
-    stageEmpty.textContent = waiting
-      ? 'Loading this layer’s evidence…'
-      : 'No review image was published for this result.';
-    caption.textContent = waiting
-      ? `Layer ${layer.index}`
-      : 'Raw and diagnostic evidence unavailable.';
+    stageEmpty.textContent = 'No review image was published for this result.';
+    caption.textContent = 'Raw and diagnostic evidence unavailable.';
     return;
   }
+  stage.classList.remove('is-waiting');
   stageEmpty.hidden = true;
   stageHint.textContent = `Layer ${layer.index}`;
   if (state.grid) {
@@ -1979,7 +2003,14 @@ let swipe = null;
 let lastTap = 0;
 
 viewport.addEventListener('pointerdown', event => {
-  viewport.setPointerCapture(event.pointerId);
+  // Guarded for the same reason as the scrubber's: capture sits ahead of the
+  // state a pinch needs, so a refusal would abandon the gesture half set up
+  // and leave the frame unresponsive to it.
+  try {
+    viewport.setPointerCapture(event.pointerId);
+  } catch {
+    // Some engines refuse for a pointer they no longer consider active.
+  }
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
@@ -2033,7 +2064,11 @@ viewport.addEventListener('pointermove', event => {
 
 function endPointer(event) {
   pointers.delete(event.pointerId);
-  if (viewport.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+  try {
+    if (viewport.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+  } catch {
+    // Releasing a capture that was never granted is not a failure worth having.
+  }
   if (pointers.size === 1 && pinchStart) {
     const [remaining] = [...pointers.values()];
     swipe = { x: remaining.x, y: remaining.y, axis: null, panX: view.x, panY: view.y };
