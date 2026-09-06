@@ -544,8 +544,13 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 }
 
 .scrubber {
+  /* The band at the top the playhead's handle sits in, so it never covers the
+     bar it is pointing at. Read back by renderScrubber(), which insets the
+     bars by it -- one definition, in the place that owns the layout. */
+  --playhead-gutter: 13px;
+
   position: relative;
-  height: 46px;
+  height: 59px;
   padding: 0 1px;
   cursor: pointer;
   touch-action: none;
@@ -556,34 +561,38 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 
 .scrub-canvas { display: block; width: 100%; height: 100%; }
 
+/* White rather than the accent: every colour in the severity palette means a
+   verdict, and a blue line down the strip reads as an info-severity column. */
 .scrub-playhead {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 2px;
   margin-left: -1px;
-  background: #fff;
-  box-shadow: 0 0 0 2px rgb(11 14 19 / 85%), 0 0 10px rgb(77 163 255 / 55%);
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 0 0 1.5px rgb(11 14 19 / 85%), 0 0 12px rgb(77 163 255 / 45%);
   pointer-events: none;
 }
 
 .scrub-playhead[hidden] { display: none; }
 
+/* The handle rides in the gutter above the bars rather than on top of them:
+   centred on the line, clear of the layer it is pointing at. */
 .scrub-playhead::after {
   position: absolute;
-  top: 50%;
+  top: calc(var(--playhead-gutter) / 2);
   left: 50%;
-  width: 13px;
-  height: 13px;
-  border: 2px solid #0b0e13;
-  border-radius: 50%;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
   background: var(--accent);
+  box-shadow: 0 0 0 2px #0b0e13, 0 2px 6px rgb(0 0 0 / 55%);
   content: "";
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(45deg);
   transition: width 90ms ease-out, height 90ms ease-out;
 }
 
-.scrubber.is-scrubbing .scrub-playhead::after { width: 15px; height: 15px; }
+.scrubber.is-scrubbing .scrub-playhead::after { width: 13px; height: 13px; }
 
 .scrub-bubble {
   position: absolute;
@@ -843,7 +852,7 @@ canvas { display: block; width: 100%; height: 132px; margin-top: 6px; }
   .evidence-card { min-height: 0; }
   .argon-panel { margin-top: 0; }
   .chart-card { min-height: 200px; }
-  .scrubber { height: 52px; }
+  .scrubber { height: 65px; }
   .filmstrip { min-height: 96px; }
 }
 

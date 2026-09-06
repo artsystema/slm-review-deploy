@@ -1086,6 +1086,12 @@ function renderScrubber() {
   const columns = severityColumns(state.layers, Math.max(1, Math.round(width * ratio)));
   const columnWidth = width / columns.length;
   const barWidth = Math.max(1, columnWidth - (columnWidth > 3 ? 1 : 0));
+  // The bars start below the playhead's gutter, so its handle has somewhere to
+  // sit that is not on top of the layer it is pointing at.
+  const gutter = Number.parseFloat(
+    getComputedStyle(scrubber).getPropertyValue('--playhead-gutter'),
+  ) || 0;
+  const barArea = Math.max(1, height - gutter);
 
   // Stretches whose frames are held locally read at full strength; the rest are
   // muted. No colour is added and no hue is changed -- severity is still the
@@ -1105,8 +1111,10 @@ function renderScrubber() {
     const { token, eligible: measured, quiet } = columns[column];
     context.globalAlpha = measured && quiet && !held[column] ? UNHELD_QUIET_ALPHA : 1;
     context.fillStyle = measured ? (severityColors[token] || '#8b93a1') : '#333a47';
-    const barHeight = quiet ? height * 0.42 : height;
-    context.fillRect(column * columnWidth, (height - barHeight) / 2, barWidth, barHeight);
+    const barHeight = quiet ? barArea * 0.42 : barArea;
+    context.fillRect(
+      column * columnWidth, gutter + (barArea - barHeight) / 2, barWidth, barHeight,
+    );
   }
   context.globalAlpha = 1;
   positionPlayhead();
