@@ -14,6 +14,7 @@ import {
   argonSeries,
   decimate,
   defectRateSeries,
+  loadedColumns,
   scrollOffsetFor,
   severityColumns,
   visibleWindow,
@@ -178,6 +179,40 @@ describe('severityColumns', () => {
 
   it('never returns more columns than layers', () => {
     assert.equal(severityColumns([completed('none'), completed('none')], 900).length, 2);
+  });
+});
+
+describe('loadedColumns', () => {
+  const build = n => Array.from({ length: n }, () => completed('none'));
+
+  it('lights a column only when every layer under it is held', () => {
+    const layers = build(10);
+    const held = new Set([layers[0], layers[1], layers[2], layers[3], layers[4]]);
+    // Five columns over ten layers: two layers each.
+    const strip = loadedColumns(layers, 5, layer => held.has(layer));
+    assert.deepEqual(strip, [true, true, false, false, false]);
+  });
+
+  it('does not promise a stretch is ready because one layer of it is', () => {
+    const layers = build(100);
+    const held = new Set([layers[42]]);
+    const strip = loadedColumns(layers, 10, layer => held.has(layer));
+    assert.deepEqual(strip.filter(Boolean), [], 'one layer in ten does not light the column');
+  });
+
+  it('lines up with the severity strip for the same arguments', () => {
+    const layers = build(3631);
+    for (const columns of [1, 7, 400, 660, 5000]) {
+      assert.equal(
+        loadedColumns(layers, columns, () => true).length,
+        severityColumns(layers, columns).length,
+        `columns ${columns}`,
+      );
+    }
+  });
+
+  it('holds nothing when nothing is loaded', () => {
+    assert.deepEqual(loadedColumns(build(4), 4, () => false), [false, false, false, false]);
   });
 });
 

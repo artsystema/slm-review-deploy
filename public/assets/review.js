@@ -3,6 +3,7 @@ import {
   decimate,
   defectRateSeries,
   eligible,
+  loadedColumns,
   isFlagged,
   scrollOffsetFor,
   severityColumns,
@@ -106,6 +107,10 @@ const mediaLabels = {
   underfill_baseline: 'Baseline',
 };
 const channelColors = ['#4fc3c8', '#e0a63a', '#b57af2', '#ef718a'];
+// How far a measured, quiet stretch is muted when its frames are not held
+// locally. Findings and unverdicted stretches are never muted; see
+// renderScrubber().
+const UNHELD_QUIET_ALPHA = 0.45;
 const severityColors = {
   none: '#2f5b46',
   clear: '#2f5b46',
@@ -717,10 +722,12 @@ async function ensureDetail(index) {
     const payload = await api(`/api/v1/layers?${parameters}`);
     for (const layer of payload.layers) rememberDetail(layer);
     applyStageAspect();
-    // Only the parts that read detail; the timeline did not change.
+    // Only the parts that read detail; the layers did not change. The strip is
+    // redrawn because which of it is held locally just did.
     renderSelector();
     renderStage();
     renderSidebar();
+    renderScrubber();
   } catch (error) {
     setNotice(`Layer detail could not be loaded: ${error.message}.`, true);
   } finally {
@@ -1079,12 +1086,29 @@ function renderScrubber() {
   const columns = severityColumns(state.layers, Math.max(1, Math.round(width * ratio)));
   const columnWidth = width / columns.length;
   const barWidth = Math.max(1, columnWidth - (columnWidth > 3 ? 1 : 0));
+
+  // Stretches whose frames are held locally read at full strength; the rest are
+  // muted. No colour is added and no hue is changed -- severity is still the
+  // only thing the strip's colour says, and this is only how strongly it says
+  // it.
+  //
+  // Muting is applied only to stretches that were measured and found quiet --
+  // the strip's "nothing to see here". Most of a long build is not held at any
+  // moment, so dimming everything unheld would dim nearly every bar, and the
+  // flagged ones are exactly those the operator has not reached yet. A finding
+  // is drawn at full strength wherever it is, and so is a stretch with no
+  // verdict: not knowing is something the operator needs to see, not the
+  // absence of something.
+  const held = loadedColumns(state.layers, columns.length, layer => state.detail.has(layer.id));
+
   for (let column = 0; column < columns.length; column += 1) {
     const { token, eligible: measured, quiet } = columns[column];
+    context.globalAlpha = measured && quiet && !held[column] ? UNHELD_QUIET_ALPHA : 1;
     context.fillStyle = measured ? (severityColors[token] || '#8b93a1') : '#333a47';
     const barHeight = quiet ? height * 0.42 : height;
     context.fillRect(column * columnWidth, (height - barHeight) / 2, barWidth, barHeight);
   }
+  context.globalAlpha = 1;
   positionPlayhead();
 }
 

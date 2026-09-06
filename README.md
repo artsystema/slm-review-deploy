@@ -251,6 +251,13 @@ pixels rather than the layers:
 - Layer detail is fetched when the selection settles, never while it is moving,
   and what has been fetched is bounded. A drag across a 3,600-layer build costs
   three requests, not one per layer passed.
+- The severity strip mutes the stretches whose frames are not held locally, so
+  it is visible where scrubbing will be instant. It is opacity, not colour: no
+  hue is added or changed, because the strip's colour means severity and only
+  severity. Only measured, quiet stretches mute -- a finding is drawn at full
+  strength wherever it is, and so is a stretch with no verdict, since not
+  knowing is something the operator needs to see. A stretch reads as held only
+  when *every* layer under it is, so the mark never promises more than it has.
 - A session longer than one index request is cut at its start, not its end: a
   build in progress is watched through its newest layers. The notice says the
   timeline was cut and that the figures cover only what it lists.

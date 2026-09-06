@@ -141,6 +141,27 @@ export function decimate(points, columns) {
 }
 
 /**
+ * Bucket a layer list into pixel columns and reduce each one.
+ *
+ * Everything drawn on the severity strip goes through here, so the tracks drawn
+ * on top of each other cannot drift apart: a column means the same run of
+ * layers whichever of them is asking.
+ *
+ * @param {(start: number, end: number) => unknown} reduce over `[start, end)`
+ */
+function byColumn(layers, columns, reduce) {
+  const budget = Math.max(1, Math.min(Math.floor(columns), layers.length));
+  const perColumn = layers.length / budget;
+  const strip = [];
+  for (let column = 0; column < budget; column += 1) {
+    const start = Math.floor(column * perColumn);
+    const end = column === budget - 1 ? layers.length : Math.floor((column + 1) * perColumn);
+    strip.push(reduce(start, end));
+  }
+  return strip;
+}
+
+/**
  * Reduce the severity strip to one entry per pixel column.
  *
  * The worst layer in a column wins it. A flagged layer therefore always paints
@@ -151,19 +172,13 @@ export function decimate(points, columns) {
  * @returns {Array<{token: string, eligible: boolean, quiet: boolean}>}
  */
 export function severityColumns(layers, columns) {
-  const budget = Math.max(1, Math.min(Math.floor(columns), layers.length));
-  const strip = [];
-  const perColumn = layers.length / budget;
-  for (let column = 0; column < budget; column += 1) {
-    const start = Math.floor(column * perColumn);
-    const end = column === budget - 1 ? layers.length : Math.floor((column + 1) * perColumn);
+  return byColumn(layers, columns, (start, end) => {
     let token = 'unknown';
     let rank = -1;
     let anyEligible = false;
     for (let index = start; index < end; index += 1) {
       const layer = layers[index];
-      const layerEligible = eligible(layer);
-      if (!layerEligible) continue;
+      if (!eligible(layer)) continue;
       anyEligible = true;
       const layerToken = severityToken(layer.analysis.severity);
       const layerRank = severityRank(layerToken);
@@ -172,13 +187,33 @@ export function severityColumns(layers, columns) {
         token = layerToken;
       }
     }
-    strip.push({
+    return {
       token: anyEligible ? token : 'unknown',
       eligible: anyEligible,
       quiet: !anyEligible || QUIET_SEVERITIES.has(token),
-    });
-  }
-  return strip;
+    };
+  });
+}
+
+/**
+ * Which columns of the strip are wholly held locally.
+ *
+ * A column counts only when *every* layer under it is loaded. The opposite
+ * choice -- lighting the column when any one of them is -- would promise the
+ * operator a stretch is ready to look at when most of it is not, and this mark
+ * is only worth drawing if it can be believed. Understating readiness costs
+ * nothing; overstating it wastes somebody's time on a slow link.
+ *
+ * @param {(layer: object) => boolean} isLoaded
+ * @returns {boolean[]} aligned with severityColumns for the same arguments
+ */
+export function loadedColumns(layers, columns, isLoaded) {
+  return byColumn(layers, columns, (start, end) => {
+    for (let index = start; index < end; index += 1) {
+      if (!isLoaded(layers[index])) return false;
+    }
+    return end > start;
+  });
 }
 
 /**
