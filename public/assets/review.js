@@ -1209,6 +1209,9 @@ scrubber.addEventListener('pointerdown', event => {
   // preventDefault stops the drag selecting text, and takes the focus with it,
   // so the slider is focused explicitly and keeps its arrow-key stepping.
   event.preventDefault();
+  // Focused so the slider keeps its arrow-key stepping, but marked as pointer
+  // focus so the ring is not drawn over a tap. Any key restores it.
+  scrubber.classList.add('is-pointer-focus');
   scrubber.focus({ preventScroll: true });
   const index = indexFromPointer(event.clientX);
   if (index !== selectedIndex()) tickScrubber(event.pointerType);
@@ -1238,6 +1241,9 @@ function endScrub(event) {
   const layer = selected();
   if (layer) activateLayer(layer);
 }
+
+scrubber.addEventListener('keydown', () => scrubber.classList.remove('is-pointer-focus'));
+scrubber.addEventListener('blur', () => scrubber.classList.remove('is-pointer-focus'));
 
 scrubber.addEventListener('pointerup', endScrub);
 scrubber.addEventListener('pointercancel', endScrub);
