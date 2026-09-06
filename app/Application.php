@@ -346,6 +346,13 @@ final class Application
               <div id="scrub-playhead" class="scrub-playhead" aria-hidden="true"></div>
               <div id="scrub-bubble" class="scrub-bubble" aria-hidden="true"></div>
             </div>
+            <div id="navigator" class="navigator" role="group" aria-label="Timeline zoom">
+              <canvas id="navigator-canvas" class="navigator-canvas" aria-hidden="true"></canvas>
+              <div id="navigator-window" class="navigator-window" aria-hidden="true">
+                <span class="navigator-grip navigator-grip-start"></span>
+                <span class="navigator-grip navigator-grip-end"></span>
+              </div>
+            </div>
             <div class="timeline-foot">
               <div class="transport" role="group" aria-label="Timeline transport">
                 <button id="finding-back" class="transport-button is-finding" type="button" aria-label="Previous flagged layer" title="Previous flagged layer (N)">

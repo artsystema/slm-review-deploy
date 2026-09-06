@@ -138,6 +138,9 @@ does not bury the back button.
      evidence for the layer it stopped on. Each control is disabled when there
      is no build left in its direction, and playing stops following the live end
      rather than fighting the poll for the selection.
+   - Pinch the timeline to zoom, or wheel over it on a desktop. The navigator
+     rail below keeps showing the whole build; drag its middle to pan and its
+     ends to resize. Press `0` or double-tap to fit the build again.
    - Press on the timeline and drag *away* from it. A build of thousands puts
      about ten layers under every pixel, so the drag gears down the further the
      finger goes -- to roughly two layers a pixel, then half of one, then a
@@ -264,9 +267,21 @@ pixels rather than the layers:
   nothing left to load. The per-layer detail -- metrics, processor, media,
   reading ages -- is fetched for the layer being looked at and its neighbours,
   and the sidebar says "loading" rather than "unknown" while it is in flight.
-- Precision comes from gearing the drag, not from zooming the strip. Zooming
-  would cost the whole-build view, which is what the strip is for; the filmstrip
-  below already shows layers one at a time. See `scrubScale()`.
+- The strip zooms, and the navigator rail under it always shows the whole build
+  with the strip's window drawn on it -- so magnifying part of a build never
+  costs the sense of where that part is in it. Pinch the strip, or wheel over
+  it; drag the navigator's middle to pan and its ends to resize. `0` or a
+  double-tap fits the whole build again. The window follows the selection only
+  when the selection deliberately moves -- stepping, playing, jumping to a
+  finding -- because doing it on every repaint made the view snap back the
+  instant the operator panned somewhere else.
+- Dragging is also geared: the further the finger moves off the strip, the fewer
+  layers a pixel covers. It reckons from the window's scale rather than the
+  build's, so zooming and gearing compose instead of fighting. See
+  `scrubScale()` and `clampWindow()`.
+- The two finding controls are tinted, held back until wanted, and greyed out
+  when there is no finding that way, so the transport never offers what it
+  cannot do.
 - Above the bars is a time ruler: round elapsed times from the session's first
   layer, at an interval chosen for the span (six-hour marks on a two-day build,
   quarter hours on a two-hour one). The x axis counts layers, not seconds, so

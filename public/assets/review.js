@@ -1,11 +1,13 @@
 import {
   argonSeries,
+  clampWindow,
   decimate,
   defectRateSeries,
   elapsedSeries,
   elapsedTicks,
   eligible,
   formatElapsed,
+  isWholeBuild,
   loadedColumns,
   longPauses,
   nextFinding,
@@ -16,6 +18,8 @@ import {
   severityToken,
   timeBasis,
   visibleWindow,
+  windowAround,
+  zoomWindow,
 } from './review-core.js';
 
 const state = {
@@ -39,6 +43,9 @@ const state = {
   grid: false,
   playing: false,
   playDirection: 1,
+  // Which run of layers the strip is showing. The navigator always shows all
+  // of them, so zooming never costs the sense of where you are in the build.
+  window: { from: 0, count: 0 },
   playTimer: null,
 };
 
@@ -71,6 +78,9 @@ const stepForwardButton = el('step-forward');
 const findingBack = el('finding-back');
 const findingForward = el('finding-forward');
 const stageGrid = el('stage-grid');
+const navigator_ = el('navigator');
+const navigatorCanvas = el('navigator-canvas');
+const navigatorWindow = el('navigator-window');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
 const POLL_MIN_MS = 10000;
@@ -696,6 +706,7 @@ async function loadLayers() {
     state.latestId = payload.latest_id || 0;
     state.follow = true;
     state.unseen = 0;
+    state.window = { from: 0, count: state.layers.length };
     state.selectedId = state.layers.at(-1)?.id ?? null;
     reportCounts();
     render();
@@ -853,7 +864,11 @@ async function poll() {
     // The poll returns full rows, so a layer that arrives live is already
     // detailed: following a build never waits for a second request.
     for (const layer of payload.layers) rememberDetail(layer);
+    const wasWhole = isWholeBuild(state.window, state.layers.length);
     const added = mergeLayers(payload.layers);
+    // A build being watched from end to end keeps showing all of itself as it
+    // grows; one zoomed into a stretch is left where the operator put it.
+    if (wasWhole) state.window = { from: 0, count: state.layers.length };
     state.latestId = Math.max(state.latestId, payload.latest_id || 0);
     if (added) {
       applyStageAspect();
@@ -925,6 +940,7 @@ function renderSelection() {
 /** Everything above, plus the parts that change only when layers arrive. */
 function render() {
   renderScrubber();
+  renderNavigator();
   renderFilmstrip();
   renderDefectChart();
   renderArgonChart();
@@ -943,6 +959,7 @@ function activateLayer(layer, userDriven = true) {
     const isLast = state.layers.at(-1)?.id === layer.id;
     if (state.follow !== isLast) setFollow(isLast);
   }
+  keepSelectionVisible();
   renderSelection();
   ensureDetail(selectedIndex());
   revealLayerChip(layer.id, state.scrubbing ? 'auto' : 'smooth');
@@ -1020,6 +1037,7 @@ function playTick() {
   const next = state.layers[selectedIndex() + state.playDirection];
   if (!next) { setPlaying(false); return; }
   state.selectedId = next.id;
+  keepSelectionVisible();
   // The parts that change per layer only. The hash is written once on stop
   // rather than a hundred times on the way there.
   renderStage();
@@ -1241,7 +1259,8 @@ function renderScrubber() {
   // worst layer that falls in it. The reduction is chosen so that a single
   // flagged layer still paints -- losing it in an average is the one outcome
   // this strip may not have.
-  const columns = severityColumns(state.layers, Math.max(1, Math.round(width * ratio)));
+  const visible = windowed();
+  const columns = severityColumns(visible, Math.max(1, Math.round(width * ratio)));
   const columnWidth = width / columns.length;
   const barWidth = Math.max(1, columnWidth - (columnWidth > 3 ? 1 : 0));
   // The bars start below the playhead's gutter, so its handle has somewhere to
@@ -1263,7 +1282,7 @@ function renderScrubber() {
   // is drawn at full strength wherever it is, and so is a stretch with no
   // verdict: not knowing is something the operator needs to see, not the
   // absence of something.
-  const held = loadedColumns(state.layers, columns.length, layer => state.detail.has(layer.id));
+  const held = loadedColumns(visible, columns.length, layer => state.detail.has(layer.id));
 
   for (let column = 0; column < columns.length; column += 1) {
     const { token, eligible: measured, quiet } = columns[column];
@@ -1282,8 +1301,8 @@ function renderScrubber() {
   // and crowd where it was not, which is the only thing on this page that shows
   // the build's pace. Nothing here is coloured, because the strip's colours
   // mean verdicts and a clock is not one.
-  for (const tick of elapsedTicks(state.layers, width, TICK_MIN_GAP_PX)) {
-    const x = xOfIndex(tick.index, width);
+  for (const tick of elapsedTicks(visible, width, TICK_MIN_GAP_PX)) {
+    const x = xOfIndex(state.window.from + tick.index, width);
     context.fillStyle = 'rgb(255 255 255 / 30%)';
     context.fillRect(x, gutter - RULER_TICK_PX, 1, RULER_TICK_PX);
     context.fillStyle = 'rgb(255 255 255 / 7%)';
@@ -1298,9 +1317,9 @@ function renderScrubber() {
   // them here would say the machine stopped when it was not even running.
   const stops = series().basis === 'replay'
     ? []
-    : longPauses(state.layers, { width, minGapPx: PAUSE_MIN_GAP_PX });
+    : longPauses(visible, { width, minGapPx: PAUSE_MIN_GAP_PX });
   for (const pause of stops) {
-    const x = xOfIndex(pause.index, width);
+    const x = xOfIndex(state.window.from + pause.index, width);
     context.fillStyle = 'rgb(16 19 24 / 95%)';
     context.fillRect(x - 2, gutter, 4, barArea);
     context.fillStyle = 'rgb(255 255 255 / 42%)';
@@ -1310,9 +1329,45 @@ function renderScrubber() {
   positionPlayhead();
 }
 
+/** The layers the strip is currently drawing. */
+function windowed() {
+  const { from, count } = state.window;
+  return state.layers.slice(from, from + count);
+}
+
 /** Where a layer position falls along the strip, in CSS pixels. */
 function xOfIndex(index, width) {
-  return (index / Math.max(1, state.layers.length - 1)) * width;
+  const { from, count } = state.window;
+  return ((index - from) / Math.max(1, count - 1)) * width;
+}
+
+/**
+ * Bring the selection into view, if it is not already.
+ *
+ * Called where the selection is deliberately moved -- stepping, playing,
+ * jumping to a finding -- and nowhere else. Doing it on every repaint made the
+ * window snap back to the playhead the instant the operator panned or zoomed
+ * somewhere else, which is to say it made the view controls not work.
+ */
+function keepSelectionVisible() {
+  const nudged = windowAround(state.window, selectedIndex(), state.layers.length);
+  if (nudged !== state.window) setWindow(nudged);
+}
+
+function setWindow(next, { redraw = true } = {}) {
+  const clamped = clampWindow(next.from, next.count, state.layers.length);
+  if (clamped.from === state.window.from && clamped.count === state.window.count) return;
+  state.window = clamped;
+  if (redraw) { renderScrubber(); renderNavigator(); }
+}
+
+/** Zoom about a fraction of the strip's width, keeping that layer still. */
+function zoomStrip(factor, at) {
+  setWindow(zoomWindow(state.window, factor, at, state.layers.length));
+}
+
+function fitWholeBuild() {
+  setWindow({ from: 0, count: state.layers.length });
 }
 
 /** The parts of the timeline that move with the selection alone. */
@@ -1338,15 +1393,109 @@ function positionPlayhead() {
     : 'No layers');
   updateTransport();
   if (!total) { playhead.hidden = true; return; }
-  playhead.hidden = false;
-  playhead.style.left = `${((at + 0.5) / total) * 100}%`;
+  const { from, count } = state.window;
+  const within = (at - from + 0.5) / Math.max(1, count);
+  playhead.hidden = within < 0 || within > 1;
+  playhead.style.left = `${within * 100}%`;
 }
+
+/**
+ * The whole build, always, with the strip's window drawn over it.
+ *
+ * This is what makes zooming affordable: the overview the strip used to be is
+ * still here, a rail high, so magnifying part of the build never costs the
+ * sense of where that part is in it.
+ */
+function renderNavigator() {
+  const total = state.layers.length;
+  navigator_.hidden = total < 2;
+  if (total < 2) return;
+  const ratio = window.devicePixelRatio || 1;
+  const width = navigator_.clientWidth;
+  const height = navigator_.clientHeight;
+  if (width <= 0 || height <= 0) return;
+  navigatorCanvas.width = Math.max(1, Math.round(width * ratio));
+  navigatorCanvas.height = Math.max(1, Math.round(height * ratio));
+  const context = navigatorCanvas.getContext('2d');
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+
+  const columns = severityColumns(state.layers, Math.max(1, Math.round(width * ratio)));
+  const columnWidth = width / columns.length;
+  for (let column = 0; column < columns.length; column += 1) {
+    const { token, eligible: measured, quiet } = columns[column];
+    context.fillStyle = measured ? (severityColors[token] || '#8b93a1') : '#333a47';
+    const barHeight = quiet ? height * 0.4 : height;
+    context.fillRect(column * columnWidth, (height - barHeight) / 2,
+      Math.max(1, columnWidth), barHeight);
+  }
+
+  const { from, count } = state.window;
+  navigatorWindow.style.left = `${(from / total) * 100}%`;
+  navigatorWindow.style.width = `${(count / total) * 100}%`;
+  navigator_.classList.toggle('is-whole', isWholeBuild(state.window, total));
+}
+
+// Drag the middle to pan, an end to zoom. Which one is decided at the press,
+// from how near the grips the finger landed, so the gesture never changes
+// meaning half way through.
+let navigatorDrag = null;
+const NAVIGATOR_GRIP_PX = 18;
+
+navigator_.addEventListener('pointerdown', event => {
+  const total = state.layers.length;
+  if (total < 2) return;
+  const bounds = navigator_.getBoundingClientRect();
+  if (bounds.width <= 0) return;
+  navigator_.setPointerCapture(event.pointerId);
+  event.preventDefault();
+  const perLayer = bounds.width / total;
+  const startX = state.window.from * perLayer;
+  const endX = (state.window.from + state.window.count) * perLayer;
+  const x = event.clientX - bounds.left;
+  let grabbed = 'body';
+  if (Math.abs(x - startX) <= NAVIGATOR_GRIP_PX) grabbed = 'start';
+  else if (Math.abs(x - endX) <= NAVIGATOR_GRIP_PX) grabbed = 'end';
+  else if (x < startX || x > endX) {
+    // Tapping outside brings the window to the finger, then pans with it.
+    setWindow({ from: x / perLayer - state.window.count / 2, count: state.window.count });
+  }
+  navigatorDrag = { grabbed, x, window: { ...state.window }, perLayer };
+});
+
+navigator_.addEventListener('pointermove', event => {
+  if (!navigatorDrag) return;
+  event.preventDefault();
+  const bounds = navigator_.getBoundingClientRect();
+  const moved = (event.clientX - bounds.left - navigatorDrag.x) / navigatorDrag.perLayer;
+  const start = navigatorDrag.window;
+  if (navigatorDrag.grabbed === 'body') {
+    setWindow({ from: start.from + moved, count: start.count });
+  } else if (navigatorDrag.grabbed === 'start') {
+    const edge = start.from + start.count;
+    setWindow({ from: start.from + moved, count: start.count - moved });
+    // Keep the far edge pinned while the near one is dragged.
+    setWindow({ from: Math.min(state.window.from, edge - state.window.count), count: state.window.count });
+  } else {
+    setWindow({ from: start.from, count: start.count + moved });
+  }
+});
+
+function endNavigatorDrag(event) {
+  if (!navigatorDrag) return;
+  if (navigator_.hasPointerCapture?.(event.pointerId)) navigator_.releasePointerCapture(event.pointerId);
+  navigatorDrag = null;
+}
+
+navigator_.addEventListener('pointerup', endNavigatorDrag);
+navigator_.addEventListener('pointercancel', endNavigatorDrag);
 
 function indexFromPointer(clientX) {
   const bounds = scrubber.getBoundingClientRect();
   if (bounds.width <= 0 || !state.layers.length) return 0;
   const fraction = clamp((clientX - bounds.left) / bounds.width, 0, 0.999999);
-  return clamp(Math.floor(fraction * state.layers.length), 0, state.layers.length - 1);
+  const { from, count } = state.window;
+  return clamp(from + Math.floor(fraction * count), 0, state.layers.length - 1);
 }
 
 function showBubble(index, clientX) {
@@ -1374,7 +1523,9 @@ let scrubAnchor = null;
 
 function naturalLayersPerPx() {
   const width = scrubber.clientWidth;
-  return width > 0 ? state.layers.length / width : 0;
+  // The window's scale, not the build's: zooming in already makes the drag
+  // finer, and the gearing should reckon from where it actually is.
+  return width > 0 ? state.window.count / width : 0;
 }
 
 /** The layer a drag has reached, geared by how far the finger has moved away. */
@@ -1435,7 +1586,14 @@ function scrubTo(index, clientX) {
 
 scrubber.addEventListener('pointerdown', event => {
   if (!state.layers.length) return;
-  scrubber.setPointerCapture(event.pointerId);
+  // Capture is what keeps a drag alive once the finger leaves the strip, which
+  // fine scrubbing depends on -- but a failure to obtain it must not abandon
+  // the drag half-configured and leave the strip dead to the touch.
+  try {
+    scrubber.setPointerCapture(event.pointerId);
+  } catch {
+    // Some engines refuse for a pointer they no longer consider active.
+  }
   if (state.playing) setPlaying(false);
   state.scrubbing = true;
   scrubber.classList.add('is-scrubbing');
@@ -1473,15 +1631,90 @@ function endScrub(event) {
   if (!state.scrubbing) return;
   state.scrubbing = false;
   scrubber.classList.remove('is-scrubbing');
-  if (event && scrubber.hasPointerCapture?.(event.pointerId)) scrubber.releasePointerCapture(event.pointerId);
+  try {
+    if (event && scrubber.hasPointerCapture?.(event.pointerId)) {
+      scrubber.releasePointerCapture(event.pointerId);
+    }
+  } catch {
+    // Releasing a capture that was never granted is not a failure worth having.
+  }
   bubble.hidden = true;
   scrubAnchor = null;
+  // A tap presses and releases inside one frame, so the scrub's pending target
+  // may not have been committed yet. Acting on the selection before committing
+  // it meant a tap moved the playhead but left the filmstrip where it was,
+  // showing one layer and pointing at another.
+  if (scrubFrame) { cancelAnimationFrame(scrubFrame); scrubFrame = 0; }
+  const pending = scrubTarget ? state.layers[scrubTarget.index] : null;
+  if (pending) state.selectedId = pending.id;
+  scrubTarget = null;
   const layer = selected();
   if (layer) activateLayer(layer);
 }
 
 scrubber.addEventListener('keydown', () => scrubber.classList.remove('is-pointer-focus'));
 scrubber.addEventListener('blur', () => scrubber.classList.remove('is-pointer-focus'));
+
+// Two fingers zoom and pan the window; one finger always scrubs, so the
+// gesture that moves the selection never becomes the one that moves the view.
+const scrubPointers = new Map();
+let pinch = null;
+
+function pinchOf() {
+  const [a, b] = [...scrubPointers.values()];
+  const bounds = scrubber.getBoundingClientRect();
+  return {
+    spread: Math.abs(a.x - b.x),
+    at: bounds.width > 0
+      ? clamp(((a.x + b.x) / 2 - bounds.left) / bounds.width, 0, 1)
+      : 0.5,
+  };
+}
+
+scrubber.addEventListener('pointerdown', event => {
+  scrubPointers.set(event.pointerId, { x: event.clientX });
+  if (scrubPointers.size === 2) {
+    // The drag that was under way is abandoned: this is a view gesture now.
+    endScrub(event);
+    pinch = { ...pinchOf(), window: { ...state.window } };
+  }
+}, true);
+
+scrubber.addEventListener('pointermove', event => {
+  if (!scrubPointers.has(event.pointerId)) return;
+  scrubPointers.set(event.pointerId, { x: event.clientX });
+  if (scrubPointers.size < 2 || !pinch || pinch.spread <= 0) return;
+  event.preventDefault();
+  const now = pinchOf();
+  zoomFrom(pinch.window, now.spread / pinch.spread, now.at);
+}, true);
+
+function forgetScrubPointer(event) {
+  scrubPointers.delete(event.pointerId);
+  if (scrubPointers.size < 2) pinch = null;
+}
+
+scrubber.addEventListener('pointerup', forgetScrubPointer, true);
+scrubber.addEventListener('pointercancel', forgetScrubPointer, true);
+
+/** Zoom relative to a window captured when the gesture began. */
+function zoomFrom(fromWindow, factor, at) {
+  setWindow(zoomWindow(fromWindow, factor, at, state.layers.length));
+}
+
+// A wheel over the strip zooms about the pointer, which is what every editing
+// timeline on a desktop does.
+scrubber.addEventListener('wheel', event => {
+  if (state.layers.length < 2) return;
+  event.preventDefault();
+  const bounds = scrubber.getBoundingClientRect();
+  const at = bounds.width > 0 ? clamp((event.clientX - bounds.left) / bounds.width, 0, 1) : 0.5;
+  zoomStrip(Math.exp(-event.deltaY * 0.0016), at);
+}, { passive: false });
+
+// Double-tap the strip, or the navigator, to see the whole build again.
+scrubber.addEventListener('dblclick', event => { event.preventDefault(); fitWholeBuild(); });
+navigator_.addEventListener('dblclick', event => { event.preventDefault(); fitWholeBuild(); });
 
 scrubber.addEventListener('pointerup', endScrub);
 scrubber.addEventListener('pointercancel', endScrub);
@@ -1946,7 +2179,7 @@ gridToggle.addEventListener('click', () => setGrid(!state.grid));
 // A link pasted into the open tab should move the viewer, not reload it.
 window.addEventListener('hashchange', () => { applyHash().catch(error => setNotice(error.message, true)); });
 
-new ResizeObserver(() => renderScrubber()).observe(scrubber);
+new ResizeObserver(() => { renderScrubber(); renderNavigator(); }).observe(scrubber);
 
 window.addEventListener('resize', () => {
   if (state.layers.length) { renderScrubber(); renderFilmstrip(); renderDefectChart(); renderArgonChart(); drawChartSelection(); }
@@ -1973,7 +2206,7 @@ window.addEventListener('keydown', event => {
     goToFinding(event.shiftKey ? -1 : 1);
     return;
   }
-  if (event.key === '0') { resetZoom(); return; }
+  if (event.key === '0') { resetZoom(); fitWholeBuild(); return; }
   if (event.key === 'e' || event.key === 'E') { setFill(!state.fill); return; }
   if (event.key === 'g' || event.key === 'G') { setGrid(!state.grid); return; }
   if (event.key === 'f' || event.key === 'F') { setFollow(!state.follow); return; }

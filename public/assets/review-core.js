@@ -453,3 +453,62 @@ export function nextFinding(layers, from, direction) {
   }
   return null;
 }
+
+// ---------- the timeline's visible window ----------
+
+/** Fewer layers than this under the strip and zooming further buys nothing. */
+const MIN_WINDOW_LAYERS = 24;
+
+/**
+ * Hold a window inside the build, and stop it collapsing.
+ *
+ * The window is a half-open range of layer positions. Clamping keeps it whole:
+ * a window pushed past either end slides back rather than shrinking, so the
+ * span the operator chose is the span they keep while panning.
+ *
+ * @returns {{from: number, count: number}}
+ */
+export function clampWindow(from, count, total) {
+  if (total <= 0) return { from: 0, count: 0 };
+  const span = Math.max(Math.min(MIN_WINDOW_LAYERS, total), Math.min(Math.round(count), total));
+  const start = Math.max(0, Math.min(Math.round(from), total - span));
+  return { from: start, count: span };
+}
+
+/**
+ * Zoom about a point, keeping the layer under it where it is.
+ *
+ * `at` is where the gesture is anchored, as a fraction of the window's width --
+ * the midpoint between two fingers, or the pointer. Keeping that layer still is
+ * what makes a pinch feel attached to the strip rather than to the viewport.
+ *
+ * @param factor >1 zooms in, <1 out
+ */
+export function zoomWindow(window, factor, at, total) {
+  const anchor = window.from + window.count * Math.min(1, Math.max(0, at));
+  const count = window.count / (factor > 0 ? factor : 1);
+  return clampWindow(anchor - count * Math.min(1, Math.max(0, at)), count, total);
+}
+
+/** Whether the window is showing everything there is. */
+export function isWholeBuild(window, total) {
+  return total <= 0 || window.count >= total;
+}
+
+/**
+ * Move the window so a layer is inside it, nudging rather than recentring.
+ *
+ * Stepping off the edge should scroll the strip by a little, the way a text
+ * cursor does; recentring on every step would make the whole build slide under
+ * a stationary playhead and lose the sense of where you are.
+ */
+export function windowAround(window, index, total, margin = 0.15) {
+  if (index >= window.from + window.count * margin
+    && index < window.from + window.count * (1 - margin)) {
+    return window;
+  }
+  if (index < window.from + window.count * margin) {
+    return clampWindow(index - window.count * margin, window.count, total);
+  }
+  return clampWindow(index - window.count * (1 - margin), window.count, total);
+}

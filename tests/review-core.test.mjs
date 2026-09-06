@@ -12,10 +12,12 @@ import { describe, it } from 'node:test';
 
 import {
   argonSeries,
+  clampWindow,
   decimate,
   defectRateSeries,
   elapsedTicks,
   formatElapsed,
+  isWholeBuild,
   loadedColumns,
   longPauses,
   nextFinding,
@@ -24,6 +26,8 @@ import {
   severityColumns,
   timeBasis,
   visibleWindow,
+  windowAround,
+  zoomWindow,
 } from '../public/assets/review-core.js';
 
 const layer = (overrides = {}) => ({
@@ -504,5 +508,65 @@ describe('nextFinding', () => {
   it('says nothing to find in a clean build', () => {
     assert.equal(nextFinding(build([]), 0, 1), null);
     assert.equal(nextFinding([], 0, 1), null);
+  });
+});
+
+describe('the timeline window', () => {
+  const total = 3617;
+
+  it('slides back inside the build rather than shrinking', () => {
+    const pushedPastTheEnd = clampWindow(total - 50, 400, total);
+    assert.equal(pushedPastTheEnd.count, 400, 'the span the operator chose was taken from them');
+    assert.equal(pushedPastTheEnd.from + pushedPastTheEnd.count, total);
+
+    const pushedPastTheStart = clampWindow(-200, 400, total);
+    assert.deepEqual(pushedPastTheStart, { from: 0, count: 400 });
+  });
+
+  it('will not zoom past the point of it', () => {
+    let window = { from: 0, count: total };
+    for (let i = 0; i < 40; i += 1) window = zoomWindow(window, 2, 0.5, total);
+    assert.ok(window.count >= 24, `collapsed to ${window.count} layers`);
+    assert.ok(window.from >= 0 && window.from + window.count <= total);
+  });
+
+  it('never shows more than there is', () => {
+    const window = zoomWindow({ from: 100, count: 400 }, 0.001, 0.5, total);
+    assert.deepEqual(window, { from: 0, count: total });
+  });
+
+  it('keeps the layer under the fingers where it is', () => {
+    const before = { from: 1000, count: 800 };
+    for (const at of [0, 0.25, 0.5, 1]) {
+      const layerUnder = before.from + before.count * at;
+      const after = zoomWindow(before, 3, at, total);
+      const stillUnder = after.from + after.count * at;
+      assert.ok(Math.abs(stillUnder - layerUnder) <= 1,
+        `the layer under ${at} moved from ${layerUnder} to ${stillUnder}`);
+    }
+  });
+
+  it('says when it is showing the whole build', () => {
+    assert.equal(isWholeBuild({ from: 0, count: total }, total), true);
+    assert.equal(isWholeBuild({ from: 0, count: 400 }, total), false);
+  });
+
+  it('nudges to follow a selection off its edge, rather than recentring', () => {
+    const window = { from: 1000, count: 400 };
+    // Well inside: left alone, so the strip does not crawl under the playhead.
+    assert.deepEqual(windowAround(window, 1200, total), window);
+    // Off the right edge: moved just far enough.
+    const after = windowAround(window, 1420, total);
+    assert.ok(after.from > window.from && after.from < 1200,
+      `jumped to ${after.from} instead of nudging`);
+    assert.ok(1420 >= after.from && 1420 < after.from + after.count);
+    // Off the left edge.
+    const back = windowAround(window, 980, total);
+    assert.ok(980 >= back.from && back.from < window.from);
+  });
+
+  it('copes with a session that has nothing in it', () => {
+    assert.deepEqual(clampWindow(0, 100, 0), { from: 0, count: 0 });
+    assert.equal(isWholeBuild({ from: 0, count: 0 }, 0), true);
   });
 });

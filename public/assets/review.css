@@ -638,6 +638,61 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 .scrub-bubble[data-severity="critical"],
 .scrub-bubble[data-severity="emergency"] { border-color: rgb(224 82 58 / 55%); color: var(--crit); }
 
+/*
+ * The time navigator: the whole build, always, with the strip's window drawn on
+ * it. Drag the middle to pan, the ends to zoom -- the same control an editing
+ * timeline uses, which is also the shape that survives being touched: the grips
+ * are wider than they look so a finger can find them.
+ */
+.navigator {
+  position: relative;
+  height: 22px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-3);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.navigator[hidden] { display: none; }
+.navigator-canvas { display: block; width: 100%; height: 100%; opacity: 0.55; }
+
+.navigator-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1px solid rgb(77 163 255 / 70%);
+  border-radius: 3px;
+  background: rgb(77 163 255 / 14%);
+  box-shadow: 0 0 0 1px rgb(11 14 19 / 60%);
+  pointer-events: none;
+}
+
+.navigator-grip {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* The finger target is far wider than the mark it presents. */
+.navigator-grip::after {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: -9px;
+  right: -9px;
+  content: "";
+}
+
+.navigator-grip-start { left: -2px; }
+.navigator-grip-end { right: -2px; }
+.navigator.is-whole .navigator-window { opacity: 0.35; }
+
 .timeline-foot {
   display: flex;
   flex-wrap: wrap;
@@ -680,10 +735,16 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 .transport-button[aria-pressed="true"] .icon-pause { display: inline; }
 
 /* Jumping between findings is what this timeline is read for, so those two are
-   tinted rather than left to look like more transport. */
-.transport-button.is-finding { color: var(--warn); opacity: 0.75; }
-.transport-button.is-finding:hover:not(:disabled) { opacity: 1; }
-.transport-button.is-finding:disabled { color: var(--text-dim); }
+   tinted rather than left to look like more transport -- but held back until
+   wanted, and greyed out entirely when there is no finding that way. Stating
+   the disabled opacity here is not redundant: this rule sits after the shared
+   `:disabled` one at equal specificity, so without it the tint would win and a
+   control that can do nothing would look as ready as one that can. */
+.transport-button.is-finding { color: var(--warn); opacity: 0.7; }
+/* The shared hover rule repaints in --text; these keep their tint and simply
+   come up to full strength, so hovering does not disguise what they are. */
+.transport-button.is-finding:hover:not(:disabled) { opacity: 1; color: var(--warn); }
+.transport-button.is-finding:disabled { color: var(--text-dim); opacity: 0.28; }
 
 .evidence-card { display: flex; padding: 12px; flex-direction: column; gap: 12px; }
 
