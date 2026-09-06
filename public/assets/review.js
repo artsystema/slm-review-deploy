@@ -30,6 +30,8 @@ const state = {
   unseen: 0,
   fill: false,
   grid: false,
+  playing: false,
+  playTimer: null,
 };
 
 // Zoom and pan survive both layer and view changes on purpose: the whole point
@@ -54,6 +56,7 @@ const bubble = el('scrub-bubble');
 const timelineCount = el('timeline-count');
 const fillToggle = el('fill-toggle');
 const gridToggle = el('grid-toggle');
+const playToggle = el('play-toggle');
 const stageGrid = el('stage-grid');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
@@ -78,6 +81,9 @@ const RUNWAY_WINDOW = 40;
 // Short enough to read as a tick, long enough that the motor actually renders
 // it: an 8 ms pulse is below the spin-up time of most phone vibrators and is
 // felt as nothing.
+// One layer roughly every sixth of a second: fast enough to read as motion
+// through the build, slow enough to see a layer go by.
+const PLAY_INTERVAL_MS = 160;
 const SCRUB_HAPTIC_MS = 20;
 const SCRUB_HAPTIC_INTERVAL_MS = 40;
 
@@ -630,6 +636,7 @@ async function loadLayers() {
   if (!select.value) return;
   const token = ++loadToken;
   state.loading = true;
+  if (state.playing) setPlaying(false);
   try {
     const parameters = sessionParameters(null);
     if (parameters === null) return;
@@ -694,7 +701,7 @@ function rememberDetail(layer) {
  * -- the strip and the charts are drawn from the index, which is already here.
  */
 async function ensureDetail(index) {
-  if (state.scrubbing) return;
+  if (moving()) return;
   const known = offset => {
     const layer = state.layers[index + offset];
     return !layer || state.detail.has(layer.id) || state.detailPending.has(layer.id);
@@ -752,6 +759,18 @@ function detailLoaded(layer) {
   return Boolean(layer && state.detail.has(layer.id));
 }
 
+/**
+ * Whether the selection is travelling rather than settled.
+ *
+ * Dragging the timeline and playing through the build are the same problem:
+ * hundreds of layers pass that nobody is stopping on. Both show each layer's
+ * own preview and neither asks the server for detail; the evidence is loaded
+ * for wherever the movement ends.
+ */
+function moving() {
+  return state.scrubbing || state.playing;
+}
+
 function reportCounts(extra = '') {
   const { eligibleCount: completed, flaggedCount: flagged } = series();
   const unavailable = state.layers.length - completed;
@@ -780,7 +799,7 @@ function schedulePoll(delay = POLL_MIN_MS) {
 }
 
 async function poll() {
-  if (document.hidden || !select.value || state.loading || state.scrubbing) {
+  if (document.hidden || !select.value || state.loading || moving()) {
     schedulePoll(POLL_MIN_MS);
     return;
   }
@@ -872,6 +891,9 @@ function render() {
 
 function activateLayer(layer, userDriven = true) {
   if (!layer) return;
+  // Any deliberate move of the selection takes the transport back from the
+  // player: it is a convenience, not something to fight for the timeline.
+  if (userDriven && state.playing) setPlaying(false);
   state.selectedId = layer.id;
   if (state.layers.at(-1)?.id === layer.id) state.unseen = 0;
   updateFollowLabel();
@@ -884,6 +906,67 @@ function activateLayer(layer, userDriven = true) {
   revealLayerChip(layer.id, state.scrubbing ? 'auto' : 'smooth');
   writeHash();
 }
+
+// ---------- playback ----------
+
+/**
+ * Walk forward through the build a layer at a time.
+ *
+ * A recoat fault reads as a shape that grows over a run of layers, and stepping
+ * to it one arrow press at a time makes that hard to see. Playing shows each
+ * layer's preview -- the same path a drag takes, for the same reason -- and
+ * stops at the end of the build or the moment the operator takes over. The
+ * evidence for wherever it stopped is loaded then.
+ */
+function setPlaying(playing) {
+  const atEnd = selectedIndex() >= state.layers.length - 1;
+  const next = playing && state.layers.length > 1 && !atEnd;
+  if (next === state.playing) {
+    if (!next) stopPlayback();
+    return;
+  }
+  state.playing = next;
+  playToggle.setAttribute('aria-pressed', String(next));
+  playToggle.setAttribute('aria-label', next ? 'Stop playing' : 'Play through the build');
+  window.clearInterval(state.playTimer);
+  if (next) {
+    // Playing is a way of looking back through a build, so it stops following
+    // the live end rather than fighting the poll for the selection.
+    if (state.follow) setFollow(false);
+    state.playTimer = window.setInterval(playTick, PLAY_INTERVAL_MS);
+  } else {
+    stopPlayback();
+  }
+}
+
+function stopPlayback() {
+  window.clearInterval(state.playTimer);
+  state.playTimer = null;
+  if (state.playing) {
+    state.playing = false;
+    playToggle.setAttribute('aria-pressed', 'false');
+    playToggle.setAttribute('aria-label', 'Play through the build');
+  }
+  // Settled: the frame the operator is now looking at earns its evidence.
+  renderSelection();
+  ensureDetail(selectedIndex());
+  writeHash();
+}
+
+function playTick() {
+  const index = selectedIndex();
+  const next = state.layers[index + 1];
+  if (!next) { setPlaying(false); return; }
+  state.selectedId = next.id;
+  // The parts that change per layer only. The hash is written once on stop
+  // rather than a hundred times on the way there.
+  renderStage();
+  positionPlayhead();
+  markSelectedChip();
+  revealLayerChip(next.id, 'auto');
+}
+
+playToggle.addEventListener('click', () => setPlaying(!state.playing));
 
 function stepLayer(offset) {
   const next = state.layers[clamp(selectedIndex() + offset, 0, state.layers.length - 1)];
@@ -937,7 +1020,7 @@ function renderStage() {
     // so; the evidence itself loads when the drag stops. It is captioned as a
     // preview because with a published thumbnail role it is a small image shown
     // large, and nobody should read a verdict off a softened picture.
-    const preview = state.scrubbing ? chosen?.preview_url : null;
+    const preview = moving() ? chosen?.preview_url : null;
     if (preview) {
       stageEmpty.hidden = true;
       stageHint.textContent = `Layer ${layer.index}`;
@@ -1132,6 +1215,9 @@ function positionPlayhead() {
   scrubber.setAttribute('aria-valuetext', current
     ? `Layer ${current.index}, ${current.analysis.severity || 'unknown'}`
     : 'No layers');
+  // There is nothing ahead to play once the selection is at the end, and a
+  // control that does nothing when pressed reads as a broken one.
+  playToggle.disabled = total < 2 || at >= total - 1;
   if (!total) { playhead.hidden = true; return; }
   playhead.hidden = false;
   playhead.style.left = `${((at + 0.5) / total) * 100}%`;
@@ -1204,6 +1290,7 @@ function scrubTo(index, clientX) {
 scrubber.addEventListener('pointerdown', event => {
   if (!state.layers.length) return;
   scrubber.setPointerCapture(event.pointerId);
+  if (state.playing) setPlaying(false);
   state.scrubbing = true;
   scrubber.classList.add('is-scrubbing');
   // preventDefault stops the drag selecting text, and takes the focus with it,

@@ -347,6 +347,12 @@ final class Application
               <div id="scrub-bubble" class="scrub-bubble" aria-hidden="true"></div>
             </div>
             <div class="timeline-foot">
+              <button id="play-toggle" class="play-toggle" type="button" aria-pressed="false" aria-label="Play through the build">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path class="icon-play" d="M5.5 3.6 12 8l-6.5 4.4z"/>
+                  <path class="icon-pause" d="M5 3.5h2.2v9H5zm3.8 0H11v9H8.8z"/>
+                </svg>
+              </button>
               <span id="timeline-count" class="timeline-count"></span>
               <span class="keyboard-hint">Drag to scrub &middot; arrows to step &middot; double-tap to zoom</span>
             </div>

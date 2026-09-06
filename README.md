@@ -124,6 +124,11 @@ does not bury the back button.
    values, not sent by the monitor. Confirm each frame carries the burned
    `<print name> | <capture time>` strip along its top. Then check the viewer
    behaviours the operator depends on:
+   - Press the play control under the timeline. The selection walks forward a
+     layer at a time showing each one's preview; pressing it again, stepping, or
+     dragging stops it and loads the evidence for the layer it stopped on. It
+     is disabled at the end of the build, and playing stops following the live
+     end rather than fighting the poll for the selection.
    - Press and drag along the timeline directly under the image; frames follow
      the finger and the bubble names the layer being passed. While dragging,
      the frame is captioned as a scrub preview and the evidence for the layer
