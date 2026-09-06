@@ -244,3 +244,124 @@ export function scrollOffsetFor(index, pitch, chipWidth, viewportWidth, total) {
   const centred = index * pitch - (viewportWidth - chipWidth) / 2;
   return Math.max(0, Math.min(centred, Math.max(0, railWidth - viewportWidth)));
 }
+
+// ---------- elapsed time along the strip ----------
+
+/** Coarse-to-fine ladder of round intervals a human reads without arithmetic. */
+const TICK_INTERVALS_MS = [
+  60e3, 2 * 60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
+  3600e3, 2 * 3600e3, 3 * 3600e3, 6 * 3600e3, 12 * 3600e3,
+  86400e3, 2 * 86400e3, 7 * 86400e3,
+];
+
+/** Milliseconds since the first layer that carries a usable timestamp. */
+export function elapsedSeries(layers) {
+  let start = null;
+  return layers.map(layer => {
+    const at = Date.parse(layer.captured_at);
+    if (Number.isNaN(at)) return null;
+    if (start === null) start = at;
+    return at - start;
+  });
+}
+
+/**
+ * Where round elapsed times fall along a strip indexed by layer.
+ *
+ * The x axis counts layers, not seconds, so time runs along it at whatever pace
+ * the machine managed: ticks spread out where layers came quickly and crowd
+ * where they did not. That is the point -- it is the only thing on this page
+ * that shows the build's pace -- but it means a stoppage stacks many ticks on
+ * one column, so ticks closer together than `minGapPx` are dropped rather than
+ * drawn as a smear that reads as detail.
+ *
+ * The interval is chosen for the span: a two-hour print gets quarter hours, a
+ * two-day one gets six-hour marks.
+ *
+ * @returns {Array<{index: number, elapsedMs: number}>}
+ */
+export function elapsedTicks(layers, width, minGapPx, maxTicks = 14) {
+  const elapsed = elapsedSeries(layers);
+  const last = [...elapsed].reverse().find(value => value != null);
+  if (layers.length < 2 || last == null || last <= 0 || width <= 0) return [];
+  const interval = TICK_INTERVALS_MS.find(step => last / step <= maxTicks)
+    ?? TICK_INTERVALS_MS[TICK_INTERVALS_MS.length - 1];
+  const span = Math.max(1, layers.length - 1);
+  const ticks = [];
+  let cursor = 0;
+  let lastX = -Infinity;
+  for (let mark = interval; mark <= last; mark += interval) {
+    // Monotonic sweep: the strip is in build order, which for a live run is
+    // also time order, and a cursor that never rewinds keeps this linear.
+    while (cursor < elapsed.length && (elapsed[cursor] == null || elapsed[cursor] < mark)) {
+      cursor += 1;
+    }
+    if (cursor >= elapsed.length) break;
+    const x = (cursor / span) * width;
+    if (x - lastX < minGapPx) continue;
+    lastX = x;
+    ticks.push({ index: cursor, elapsedMs: mark });
+  }
+  return ticks;
+}
+
+/**
+ * Stretches where the machine stopped, as gaps against its own layer rate.
+ *
+ * A threshold in minutes would be meaningless across machines and materials, so
+ * it is a multiple of this build's own median gap, floored so a fast replay
+ * does not report every pause between its runs. These are the events the
+ * severity strip cannot show: nothing is wrong with the layers either side, the
+ * time between them is the finding.
+ *
+ * Given a pixel budget, stops closer together than `minGapPx` are one mark
+ * carrying the longest of them: two stoppages a layer apart are the same column
+ * of the strip, and drawing both stacks a mark on a mark.
+ *
+ * @returns {Array<{index: number, ms: number}>} index is the layer after the stop
+ */
+export function longPauses(
+  layers,
+  { multiple = 20, floorMs = 300e3, limit = 12, width = 0, minGapPx = 0 } = {},
+) {
+  const elapsed = elapsedSeries(layers);
+  const gaps = [];
+  for (let index = 1; index < elapsed.length; index += 1) {
+    if (elapsed[index] == null || elapsed[index - 1] == null) continue;
+    gaps.push({ index, ms: elapsed[index] - elapsed[index - 1] });
+  }
+  if (!gaps.length) return [];
+  const sorted = gaps.map(gap => gap.ms).sort((left, right) => left - right);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const threshold = Math.max(floorMs, multiple * median);
+  const found = gaps
+    .filter(gap => gap.ms > threshold)
+    .sort((left, right) => right.ms - left.ms)
+    .slice(0, limit)
+    .sort((left, right) => left.index - right.index);
+  if (!(width > 0 && minGapPx > 0) || found.length < 2) return found;
+  const span = Math.max(1, layers.length - 1);
+  const kept = [];
+  for (const pause of found) {
+    const previous = kept[kept.length - 1];
+    const apart = previous
+      ? ((pause.index - previous.index) / span) * width
+      : Infinity;
+    if (apart >= minGapPx) kept.push(pause);
+    else if (pause.ms > previous.ms) kept[kept.length - 1] = pause;
+  }
+  return kept;
+}
+
+/** "+6h", "+45m", "+2d 3h" -- short enough for a strip, exact enough to act on. */
+export function formatElapsed(ms) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return '';
+  const minutes = Math.round(ms / 60e3);
+  if (minutes < 60) return `+${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  if (hours < 24) return restMinutes ? `+${hours}h ${restMinutes}m` : `+${hours}h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `+${days}d ${restHours}h` : `+${days}d`;
+}

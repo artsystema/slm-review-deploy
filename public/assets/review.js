@@ -2,8 +2,12 @@ import {
   argonSeries,
   decimate,
   defectRateSeries,
+  elapsedSeries,
+  elapsedTicks,
   eligible,
+  formatElapsed,
   loadedColumns,
+  longPauses,
   isFlagged,
   scrollOffsetFor,
   severityColumns,
@@ -84,6 +88,13 @@ const RUNWAY_WINDOW = 40;
 // One layer roughly every sixth of a second: fast enough to read as motion
 // through the build, slow enough to see a layer go by.
 const PLAY_INTERVAL_MS = 160;
+// Ticks nearer than this are the same column of the strip; a stoppage would
+// otherwise stack a day of them on one pixel.
+const TICK_MIN_GAP_PX = 26;
+const PAUSE_MIN_GAP_PX = 14;
+// The ruler sits in the lower part of the playhead's band, leaving the top of
+// it for the handle.
+const RULER_TICK_PX = 4;
 const SCRUB_HAPTIC_MS = 20;
 const SCRUB_HAPTIC_INTERVAL_MS = 40;
 
@@ -278,6 +289,7 @@ function series() {
     flaggedCount,
     runway: argonRunway(),
     units: argonUnits(),
+    elapsed: elapsedSeries(state.layers),
   };
   return seriesCache;
 }
@@ -1200,16 +1212,57 @@ function renderScrubber() {
     );
   }
   context.globalAlpha = 1;
+
+  // Time along a strip indexed by layers: a ruler in the band above the bars,
+  // where it does not sit on the data at all, with a hairline dropped through
+  // them for the eye to follow. The marks spread where the machine was quick
+  // and crowd where it was not, which is the only thing on this page that shows
+  // the build's pace. Nothing here is coloured, because the strip's colours
+  // mean verdicts and a clock is not one.
+  for (const tick of elapsedTicks(state.layers, width, TICK_MIN_GAP_PX)) {
+    const x = xOfIndex(tick.index, width);
+    context.fillStyle = 'rgb(255 255 255 / 30%)';
+    context.fillRect(x, gutter - RULER_TICK_PX, 1, RULER_TICK_PX);
+    context.fillStyle = 'rgb(255 255 255 / 7%)';
+    context.fillRect(x, gutter, 1, barArea);
+  }
+
+  // Where the machine stopped, drawn as a break in the strip rather than a
+  // colour on it. Nothing is wrong with the layers either side -- the time
+  // between them is the finding, and there is no bad layer to shade. Amber
+  // would have said "warning", which this is not.
+  for (const pause of longPauses(state.layers, { width, minGapPx: PAUSE_MIN_GAP_PX })) {
+    const x = xOfIndex(pause.index, width);
+    context.fillStyle = 'rgb(16 19 24 / 95%)';
+    context.fillRect(x - 2, gutter, 4, barArea);
+    context.fillStyle = 'rgb(255 255 255 / 42%)';
+    context.fillRect(x - 2, gutter, 4, 1.5);
+    context.fillRect(x - 2, gutter + barArea - 1.5, 4, 1.5);
+  }
   positionPlayhead();
+}
+
+/** Where a layer position falls along the strip, in CSS pixels. */
+function xOfIndex(index, width) {
+  return (index / Math.max(1, state.layers.length - 1)) * width;
 }
 
 /** The parts of the timeline that move with the selection alone. */
 function positionPlayhead() {
   const total = state.layers.length;
   const at = selectedIndex();
+  // Elapsed since the session's first layer. Deliberately not called print time:
+  // captured_at is the analysis timestamp, which is the frame's time on a live
+  // run and the replay's time on a batch one, and this page cannot yet tell
+  // which it is looking at.
+  const elapsed = total ? series().elapsed[at] : null;
+  const since = elapsed == null ? '' : ` · ${formatElapsed(elapsed)}`;
   timelineCount.textContent = total
-    ? `Layer ${state.layers[at]?.index ?? '?'} · ${at + 1} of ${total}`
+    ? `Layer ${state.layers[at]?.index ?? '?'} · ${at + 1} of ${total}${since}`
     : 'no layers';
+  timelineCount.title = elapsed == null
+    ? ''
+    : 'Elapsed since the first layer of this session';
   scrubber.setAttribute('aria-valuenow', String(total ? at : 0));
   const current = selected();
   scrubber.setAttribute('aria-valuetext', current

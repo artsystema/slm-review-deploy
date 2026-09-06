@@ -14,7 +14,10 @@ import {
   argonSeries,
   decimate,
   defectRateSeries,
+  elapsedTicks,
+  formatElapsed,
   loadedColumns,
+  longPauses,
   scrollOffsetFor,
   severityColumns,
   visibleWindow,
@@ -249,5 +252,148 @@ describe('scrollOffsetFor', () => {
   it('does not scroll past either end', () => {
     assert.equal(scrollOffsetFor(0, 121, 116, 1200, 4000), 0);
     assert.equal(scrollOffsetFor(3999, 121, 116, 1200, 4000), 4000 * 121 - 5 - 1200);
+  });
+});
+
+describe('elapsedTicks', () => {
+  // A layer every `stepS` seconds, with optional stalls injected at an index.
+  const build = (n, stepS, stalls = {}) => {
+    let at = Date.UTC(2026, 8, 1);
+    return Array.from({ length: n }, (_, index) => {
+      if (index) at += (stalls[index] ?? stepS) * 1000;
+      return { ...completed('none'), captured_at: new Date(at).toISOString() };
+    });
+  };
+
+  it('picks an interval a person can read for the span it has', () => {
+    // Two hours of layers: quarter hours, not seconds and not days.
+    const short = elapsedTicks(build(240, 30), 800, 20);
+    const shortStep = short[1].elapsedMs - short[0].elapsedMs;
+    assert.ok(shortStep <= 30 * 60e3, `two-hour print ticked every ${shortStep / 60e3} min`);
+
+    // Two days of layers: hours, not quarter hours.
+    const long = elapsedTicks(build(3617, 52 * 3600 / 3617), 800, 20);
+    const longStep = long[1].elapsedMs - long[0].elapsedMs;
+    assert.ok(longStep >= 3600e3, `two-day print ticked every ${longStep / 60e3} min`);
+  });
+
+  it('keeps the tick count readable however long the build ran', () => {
+    for (const [n, stepS] of [[120, 20], [1000, 30], [3617, 52], [8000, 120]]) {
+      const ticks = elapsedTicks(build(n, stepS), 800, 20);
+      assert.ok(ticks.length <= 14, `${n} layers gave ${ticks.length} ticks`);
+    }
+  });
+
+  it('does not smear a stoppage into a wall of ticks', () => {
+    // Fourteen hours between two adjacent layers, as session 0109-shell had.
+    const layers = build(600, 32, { 300: 14 * 3600 });
+    const ticks = elapsedTicks(layers, 800, 20);
+    const atStall = ticks.filter(tick => tick.index === 300);
+    assert.ok(atStall.length <= 1, `${atStall.length} ticks stacked on one column`);
+    const span = Math.max(1, layers.length - 1);
+    for (let i = 1; i < ticks.length; i += 1) {
+      const gap = ((ticks[i].index - ticks[i - 1].index) / span) * 800;
+      assert.ok(gap >= 20 - 1e-9, `ticks ${gap.toFixed(1)}px apart`);
+    }
+  });
+
+  it('runs forward along the strip and stays inside it', () => {
+    const layers = build(1000, 30);
+    const ticks = elapsedTicks(layers, 800, 20);
+    for (let i = 1; i < ticks.length; i += 1) {
+      assert.ok(ticks[i].index > ticks[i - 1].index);
+      assert.ok(ticks[i].elapsedMs > ticks[i - 1].elapsedMs);
+    }
+    assert.ok(ticks.at(-1).index < layers.length);
+  });
+
+  it('has nothing to say about a build with no time in it', () => {
+    assert.deepEqual(elapsedTicks(build(1, 30), 800, 20), []);
+    assert.deepEqual(elapsedTicks(build(50, 0), 800, 20), []);
+    assert.deepEqual(elapsedTicks([], 800, 20), []);
+  });
+});
+
+describe('longPauses', () => {
+  const build = (n, stepS, stalls = {}) => {
+    let at = Date.UTC(2026, 8, 1);
+    return Array.from({ length: n }, (_, index) => {
+      if (index) at += (stalls[index] ?? stepS) * 1000;
+      return { ...completed('none'), captured_at: new Date(at).toISOString() };
+    });
+  };
+
+  it('finds the stop and not the ordinary layer time', () => {
+    const pauses = longPauses(build(600, 32, { 300: 14 * 3600, 450: 2.4 * 3600 }));
+    assert.deepEqual(pauses.map(pause => pause.index), [300, 450]);
+    assert.equal(Math.round(pauses[0].ms / 3600e3), 14);
+  });
+
+  it('measures against the build’s own rate, not the clock', () => {
+    // Ninety seconds is a stop for a machine laying a layer a second, and
+    // nothing at all for one taking two minutes a layer.
+    const fast = longPauses(build(400, 1, { 200: 90 }), { floorMs: 0 });
+    const slow = longPauses(build(400, 120, { 200: 90 }), { floorMs: 0 });
+    assert.deepEqual(fast.map(p => p.index), [200]);
+    assert.deepEqual(slow.map(p => p.index), []);
+  });
+
+  it('does not mark every gap in a replay that runs flat out', () => {
+    // A batch replay: half a second a layer, with breaks between its runs.
+    const pauses = longPauses(build(2000, 0.5, { 700: 400, 1400: 600 }));
+    assert.ok(pauses.length <= 2, `${pauses.length} pauses marked in a replay`);
+  });
+
+  it('reports the worst stops in build order, bounded', () => {
+    const stalls = Object.fromEntries(
+      Array.from({ length: 40 }, (_, i) => [10 + i * 20, 600 + i * 60]),
+    );
+    const pauses = longPauses(build(1000, 5, stalls), { limit: 5 });
+    assert.equal(pauses.length, 5);
+    for (let i = 1; i < pauses.length; i += 1) {
+      assert.ok(pauses[i].index > pauses[i - 1].index, 'in build order');
+    }
+  });
+});
+
+describe('formatElapsed', () => {
+  it('reads as a duration at every scale', () => {
+    assert.equal(formatElapsed(0), '+0m');
+    assert.equal(formatElapsed(45 * 60e3), '+45m');
+    assert.equal(formatElapsed(6 * 3600e3), '+6h');
+    assert.equal(formatElapsed((18 * 60 + 12) * 60e3), '+18h 12m');
+    assert.equal(formatElapsed(52 * 3600e3), '+2d 4h');
+    assert.equal(formatElapsed(48 * 3600e3), '+2d');
+  });
+
+  it('says nothing rather than something wrong', () => {
+    assert.equal(formatElapsed(null), '');
+    assert.equal(formatElapsed(NaN), '');
+    assert.equal(formatElapsed(-1), '');
+  });
+});
+
+describe('longPauses in a pixel budget', () => {
+  const build = (n, stepS, stalls = {}) => {
+    let at = Date.UTC(2026, 8, 1);
+    return Array.from({ length: n }, (_, index) => {
+      if (index) at += (stalls[index] ?? stepS) * 1000;
+      return { ...completed('none'), captured_at: new Date(at).toISOString() };
+    });
+  };
+
+  it('draws one mark where two stops share a column', () => {
+    // As session 0109-shell has: a 20 minute stop and a 14 hour one, one layer apart.
+    const layers = build(3617, 32, { 1885: 20 * 60, 1886: 13.9 * 3600 });
+    const marks = longPauses(layers, { width: 370, minGapPx: 14 });
+    const near = marks.filter(mark => Math.abs(mark.index - 1886) <= 2);
+    assert.equal(near.length, 1, 'two stops on one column drew two marks');
+    assert.equal(Math.round(near[0].ms / 3600e3), 14, 'the longer stop is the one kept');
+  });
+
+  it('keeps stops that are genuinely far apart', () => {
+    const layers = build(3617, 32, { 500: 3600, 3000: 2.4 * 3600 });
+    const marks = longPauses(layers, { width: 370, minGapPx: 14 });
+    assert.deepEqual(marks.map(m => m.index), [500, 3000]);
   });
 });

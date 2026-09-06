@@ -249,6 +249,21 @@ pixels rather than the layers:
   nothing left to load. The per-layer detail -- metrics, processor, media,
   reading ages -- is fetched for the layer being looked at and its neighbours,
   and the sidebar says "loading" rather than "unknown" while it is in flight.
+- Above the bars is a time ruler: round elapsed times from the session's first
+  layer, at an interval chosen for the span (six-hour marks on a two-day build,
+  quarter hours on a two-hour one). The x axis counts layers, not seconds, so
+  the marks spread where the machine was quick and crowd where it was not --
+  the only thing on the page that shows the build's pace. Marks that would
+  share a column are dropped rather than smeared into a wall.
+- A stoppage breaks the strip. The threshold is a multiple of the build's own
+  median layer time rather than a number of minutes, so it means the same on a
+  fast machine and a slow one. Nothing is wrong with the layers either side --
+  the time between them is the finding, and the severity strip has no bad layer
+  to colour. It is drawn as a break rather than in amber for that reason.
+- The foot reads `+18h 12m` for the selected layer: elapsed since the session's
+  first layer. It is deliberately not called print time. `captured_at` is the
+  analysis timestamp, which is the frame's time on a live run and the replay's
+  time on a batch one, and the manifest does not yet say which.
 - Because the whole build is loaded, the defect rate and the **Argon left**
   figure are computed over the build. They used to be fitted over however many
   pages had been loaded, so they moved when the operator pressed the button.
