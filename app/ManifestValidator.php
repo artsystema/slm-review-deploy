@@ -31,6 +31,8 @@ final class ValidatedManifest
         public readonly ?string $sessionName,
         public readonly string $sessionState,
         public readonly int $runLocalId,
+        /** "watch", "batch", or null from a monitor that predates the field. */
+        public readonly ?string $runMode,
         public readonly int $analysisId,
         public readonly int $layerIndex,
         public readonly string $capturedAt,
@@ -74,10 +76,27 @@ final class ManifestValidator
         $sessionState = self::string($session['state'], 'session.state', 50);
 
         $run = self::object($manifest['run'], 'run');
-        self::exactKeys($run, ['local_id', 'processor', 'processor_version', 'rules_version', 'profile_name'], 'run');
+        self::exactKeys(
+            $run,
+            ['local_id', 'processor', 'processor_version', 'rules_version', 'profile_name'],
+            'run',
+            ['mode'],
+        );
         $runId = self::positiveInt($run['local_id'], 'run.local_id');
         foreach (['processor', 'processor_version', 'rules_version', 'profile_name'] as $field) {
             self::string($run[$field], "run.{$field}", 255);
+        }
+        // Whether these layers were analysed as the machine made them or
+        // replayed from disk afterwards. It decides whether the reviewer may
+        // call the timestamps print time at all, so an unrecognised value is
+        // refused rather than guessed at. Absent on manifests from monitors
+        // that predate it, and unknown is an honest answer.
+        $runMode = null;
+        if (array_key_exists('mode', $run)) {
+            $runMode = self::string($run['mode'], 'run.mode', 20);
+            if (!in_array($runMode, ['watch', 'batch'], true)) {
+                throw new HttpError(422, 'run.mode is unsupported');
+            }
         }
 
         $layer = self::object($manifest['layer'], 'layer');
@@ -171,15 +190,26 @@ final class ManifestValidator
 
         return new ValidatedManifest(
             $key, $monitorId, $monitorVersion, $sessionId, $sessionName, $sessionState, $runId,
-            $analysisId, $layerIndex, $capturedAt, $status, $severity, $state, $keyViewState,
-            $media,
+            $runMode, $analysisId, $layerIndex, $capturedAt, $status, $severity, $state,
+            $keyViewState, $media,
         );
     }
 
-    /** @param array<string, mixed> $value @param list<string> $expected */
-    private static function exactKeys(array $value, array $expected, string $context): void
-    {
-        $actual = array_keys($value);
+    /**
+     * @param list<string> $expected keys that must be present
+     * @param list<string> $optional keys that may be, and are ignored if not
+     */
+    private static function exactKeys(
+        array $value,
+        array $expected,
+        string $context,
+        array $optional = [],
+    ): void {
+        // Optional keys are how a field reaches this service before the
+        // monitors that will send it: a reviewer deployed first accepts
+        // manifests with and without it, so the two halves never have to be
+        // upgraded in the same breath.
+        $actual = array_values(array_diff(array_keys($value), $optional));
         sort($actual);
         sort($expected);
         if ($actual !== $expected) {

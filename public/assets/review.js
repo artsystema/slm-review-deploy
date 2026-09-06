@@ -12,6 +12,7 @@ import {
   scrollOffsetFor,
   severityColumns,
   severityToken,
+  timeBasis,
   visibleWindow,
 } from './review-core.js';
 
@@ -95,6 +96,26 @@ const PAUSE_MIN_GAP_PX = 14;
 // The ruler sits in the lower part of the playhead's band, leaving the top of
 // it for the handle.
 const RULER_TICK_PX = 4;
+
+// What the elapsed figures may be called. The timestamps are analysis times:
+// the frame's own on a live run, the replay's on a batch one. Saying "print
+// time" over a replay would be inventing the build's history, and saying
+// nothing at all over a live run would waste what the page does know.
+const ELAPSED_QUALIFIER = {
+  print: '',
+  replay: ' replay',
+  mixed: ' mixed',
+  unknown: '',
+};
+const ELAPSED_MEANING = {
+  print: 'Elapsed print time, since this session’s first layer',
+  replay: 'Time taken to replay these layers from disk — not the print’s own',
+  mixed: 'This session mixes live and replayed runs, so this is neither the '
+    + 'print’s elapsed time nor one replay’s',
+  unknown: 'Elapsed since this session’s first layer. The monitor that '
+    + 'published it did not say whether these layers were watched live or '
+    + 'replayed from disk',
+};
 const SCRUB_HAPTIC_MS = 20;
 const SCRUB_HAPTIC_INTERVAL_MS = 40;
 
@@ -290,6 +311,7 @@ function series() {
     runway: argonRunway(),
     units: argonUnits(),
     elapsed: elapsedSeries(state.layers),
+    basis: timeBasis(state.layers),
   };
   return seriesCache;
 }
@@ -1231,7 +1253,12 @@ function renderScrubber() {
   // colour on it. Nothing is wrong with the layers either side -- the time
   // between them is the finding, and there is no bad layer to shade. Amber
   // would have said "warning", which this is not.
-  for (const pause of longPauses(state.layers, { width, minGapPx: PAUSE_MIN_GAP_PX })) {
+  // Not on a replay: its gaps are the breaks between replay runs, and drawing
+  // them here would say the machine stopped when it was not even running.
+  const stops = series().basis === 'replay'
+    ? []
+    : longPauses(state.layers, { width, minGapPx: PAUSE_MIN_GAP_PX });
+  for (const pause of stops) {
     const x = xOfIndex(pause.index, width);
     context.fillStyle = 'rgb(16 19 24 / 95%)';
     context.fillRect(x - 2, gutter, 4, barArea);
@@ -1256,13 +1283,13 @@ function positionPlayhead() {
   // run and the replay's time on a batch one, and this page cannot yet tell
   // which it is looking at.
   const elapsed = total ? series().elapsed[at] : null;
-  const since = elapsed == null ? '' : ` · ${formatElapsed(elapsed)}`;
+  const basis = total ? series().basis : 'unknown';
+  const qualifier = ELAPSED_QUALIFIER[basis] ?? '';
+  const since = elapsed == null ? '' : ` · ${formatElapsed(elapsed)}${qualifier}`;
   timelineCount.textContent = total
     ? `Layer ${state.layers[at]?.index ?? '?'} · ${at + 1} of ${total}${since}`
     : 'no layers';
-  timelineCount.title = elapsed == null
-    ? ''
-    : 'Elapsed since the first layer of this session';
+  timelineCount.title = elapsed == null ? '' : ELAPSED_MEANING[basis];
   scrubber.setAttribute('aria-valuenow', String(total ? at : 0));
   const current = selected();
   scrubber.setAttribute('aria-valuetext', current

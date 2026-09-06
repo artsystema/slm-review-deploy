@@ -31,12 +31,12 @@ final class PublicationRepository
                 'INSERT INTO publications (
                     publication_key, monitor_instance_id, monitor_software_version,
                     session_local_id, session_name, session_state,
-                    run_local_id, layer_analysis_id, layer_index, captured_at, analysis_status, severity,
+                    run_local_id, run_mode, layer_analysis_id, layer_index, captured_at, analysis_status, severity,
                     analysis_state, key_view_state, manifest_sha256, manifest_json, status
                 ) VALUES (
                     :publication_key, :monitor_instance_id, :monitor_software_version,
                     :session_local_id, :session_name, :session_state,
-                    :run_local_id, :layer_analysis_id, :layer_index, :captured_at, :analysis_status, :severity,
+                    :run_local_id, :run_mode, :layer_analysis_id, :layer_index, :captured_at, :analysis_status, :severity,
                     :analysis_state, :key_view_state, :manifest_sha256, :manifest_json, \'staged\'
                 )'
             );
@@ -48,6 +48,7 @@ final class PublicationRepository
                 'session_name' => $manifest->sessionName,
                 'session_state' => $manifest->sessionState,
                 'run_local_id' => $manifest->runLocalId,
+                'run_mode' => $manifest->runMode,
                 'layer_analysis_id' => $manifest->analysisId,
                 'layer_index' => $manifest->layerIndex,
                 'captured_at' => $manifest->capturedAt,

@@ -55,14 +55,22 @@ paths are examples only; substitute the cPanel account's actual home path.
    path such as `/home/CPANEL_USER/slm-review-storage`.
 4. Import `migrations/001_initial.sql`, then `migrations/002_build_order.sql`,
    then `migrations/003_monitor_version.sql`, then
-   `migrations/004_layer_summary.sql`, with phpMyAdmin into the new database.
+   `migrations/004_layer_summary.sql`, then `migrations/005_run_mode.sql`,
+   with phpMyAdmin into the new database.
    All three later migrations are required when upgrading an existing install:
    002 adds the index behind the build-ordered timeline, 003 records which
    monitor build published each layer, backfilling history from the manifests
    already stored, and 004 adds the columns the session index is read from.
    Without 003 the ingest endpoint rejects every upload, because it writes a
    column that does not exist yet; without 004 it does the same, and the
-   viewer's timeline request fails outright. Unlike 003, 004 needs no backfill
+   viewer's timeline request fails outright; 005 records whether each layer was
+   watched live or replayed, which decides whether the viewer may call its
+   elapsed figures print time.
+
+   **Deploy this service before the monitor that sends `run.mode`.** The
+   validator accepts the field as optional, so a reviewer updated first is happy
+   with old and new monitors alike; a monitor updated first would have every
+   bundle refused. Unlike 003, 004 needs no backfill
    step: the read path fills older rows in from the manifests it already
    stores, a bounded number per request, and answers correctly meanwhile.
 5. Upload the contents of `public/` to the hostname document root. Copy
@@ -260,10 +268,14 @@ pixels rather than the layers:
   fast machine and a slow one. Nothing is wrong with the layers either side --
   the time between them is the finding, and the severity strip has no bad layer
   to colour. It is drawn as a break rather than in amber for that reason.
-- The foot reads `+18h 12m` for the selected layer: elapsed since the session's
-  first layer. It is deliberately not called print time. `captured_at` is the
-  analysis timestamp, which is the frame's time on a live run and the replay's
-  time on a batch one, and the manifest does not yet say which.
+- The foot reads `+18h 12m` for the selected layer, and says what that figure
+  is. `captured_at` is the analysis timestamp: the frame's own time on a live
+  `watch` run, and the replay's on a `batch` one. The manifest now carries
+  `run.mode`, so a live build's figure is print time, a replay's is labelled
+  `replay`, a session holding both claims neither, and a layer from a monitor
+  that predates the field gets the figure with no claim attached. A replay also
+  draws no stoppages: its gaps are the breaks between replay runs, and the
+  machine was not even running.
 - Because the whole build is loaded, the defect rate and the **Argon left**
   figure are computed over the build. They used to be fitted over however many
   pages had been loaded, so they moved when the operator pressed the button.

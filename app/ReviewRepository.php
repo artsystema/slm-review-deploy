@@ -137,7 +137,7 @@ final class ReviewRepository
         int $limit,
         string $basePath,
     ): array {
-        $sql = 'SELECT p.id, p.run_local_id, p.layer_index, p.captured_at, p.analysis_status,
+        $sql = 'SELECT p.id, p.run_local_id, p.run_mode, p.layer_index, p.captured_at, p.analysis_status,
                        p.severity, p.summary_version, p.deficit_area_frac, p.argon_combined_value,
                        p.argon_combined_state, p.argon_units, p.argon_channels_json, p.preview_sha256,
                        CASE WHEN p.summary_version IS NULL THEN p.manifest_json END AS manifest_json
@@ -172,6 +172,8 @@ final class ReviewRepository
             $layers[] = [
                 'id' => (int) $row['id'],
                 'run_local_id' => (int) $row['run_local_id'],
+                // How the timestamps on this layer were made. See migration 005.
+                'run_mode' => $row['run_mode'],
                 'index' => (int) $row['layer_index'],
                 'captured_at' => $row['captured_at'],
                 'analysis' => [
@@ -426,7 +428,7 @@ final class ReviewRepository
 
     private function selectClause(): string
     {
-        return 'SELECT p.id, p.run_local_id, p.layer_index, p.captured_at, p.analysis_status, p.severity,
+        return 'SELECT p.id, p.run_local_id, p.run_mode, p.layer_index, p.captured_at, p.analysis_status, p.severity,
                        p.analysis_state, p.key_view_state, p.monitor_software_version, p.manifest_json
                 FROM publications p
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id';
@@ -483,6 +485,7 @@ final class ReviewRepository
             $rows[] = [
                 'id' => (int) $row['id'],
                 'run_local_id' => (int) $row['run_local_id'],
+                'run_mode' => $row['run_mode'],
                 'index' => (int) $row['layer_index'],
                 'captured_at' => $row['captured_at'],
                 'analysis' => $manifest['analysis'],

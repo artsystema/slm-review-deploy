@@ -365,3 +365,31 @@ export function formatElapsed(ms) {
   const restHours = hours % 24;
   return restHours ? `+${days}d ${restHours}h` : `+${days}d`;
 }
+
+/**
+ * What the elapsed figures on this timeline are actually measuring.
+ *
+ * `captured_at` is the analysis timestamp. On a live `watch` run that is the
+ * frame's own time, so elapsed along the strip is the print's own elapsed time.
+ * On a `batch` replay it is when the replay ran, and a forty-minute replay of a
+ * twenty-hour print would otherwise be presented as a forty-minute build.
+ *
+ * A session may hold runs of both kinds, and one that does cannot be called
+ * either. Monitors that predate the field send nothing, which is `unknown` --
+ * an answer, not a failure.
+ *
+ * @returns {'print'|'replay'|'mixed'|'unknown'}
+ */
+export function timeBasis(layers) {
+  let watch = false;
+  let batch = false;
+  for (const layer of layers) {
+    if (layer.run_mode === 'watch') watch = true;
+    else if (layer.run_mode === 'batch') batch = true;
+    else return 'unknown';
+  }
+  if (watch && batch) return 'mixed';
+  if (watch) return 'print';
+  if (batch) return 'replay';
+  return 'unknown';
+}

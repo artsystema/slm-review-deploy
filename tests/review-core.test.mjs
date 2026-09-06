@@ -20,6 +20,7 @@ import {
   longPauses,
   scrollOffsetFor,
   severityColumns,
+  timeBasis,
   visibleWindow,
 } from '../public/assets/review-core.js';
 
@@ -395,5 +396,31 @@ describe('longPauses in a pixel budget', () => {
     const layers = build(3617, 32, { 500: 3600, 3000: 2.4 * 3600 });
     const marks = longPauses(layers, { width: 370, minGapPx: 14 });
     assert.deepEqual(marks.map(m => m.index), [500, 3000]);
+  });
+});
+
+describe('timeBasis', () => {
+  const run = (mode, n = 3) => Array.from({ length: n }, () => ({ ...completed('none'), run_mode: mode }));
+
+  it('calls a watched build a print', () => {
+    assert.equal(timeBasis(run('watch')), 'print');
+  });
+
+  it('calls a replay a replay', () => {
+    assert.equal(timeBasis(run('batch')), 'replay');
+  });
+
+  it('refuses to call a session of both either one', () => {
+    assert.equal(timeBasis([...run('watch'), ...run('batch')]), 'mixed');
+  });
+
+  it('says unknown for a monitor that never sent it', () => {
+    assert.equal(timeBasis([{ ...completed('none') }]), 'unknown');
+    // One layer without it is enough: the rest cannot vouch for that one.
+    assert.equal(timeBasis([...run('watch'), { ...completed('none') }]), 'unknown');
+  });
+
+  it('says unknown for an empty session rather than guessing', () => {
+    assert.equal(timeBasis([]), 'unknown');
   });
 });
