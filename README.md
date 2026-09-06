@@ -282,12 +282,17 @@ pixels rather than the layers:
 - The two finding controls are tinted, held back until wanted, and greyed out
   when there is no finding that way, so the transport never offers what it
   cannot do.
-- Above the bars is a time ruler: round elapsed times from the session's first
-  layer, at an interval chosen for the span (six-hour marks on a two-day build,
-  quarter hours on a two-hour one). The x axis counts layers, not seconds, so
-  the marks spread where the machine was quick and crowd where it was not --
-  the only thing on the page that shows the build's pace. Marks that would
-  share a column are dropped rather than smeared into a wall.
+- Above the bars is a time ruler, labelled, at an interval chosen for the span
+  actually on screen -- six-hour marks across a two-day build, finer as it is
+  zoomed. The marks are absolute times from the session's first layer, so they
+  stay on the same layers as the window pans and while playback pushes it
+  along. Measuring them from the window's edge instead made a notch mean a
+  different thing at every zoom level and slide about during playback.
+  The x axis counts layers, not seconds, so the marks spread where the machine
+  was quick and crowd where it was not -- the only thing on the page that shows
+  the build's pace. Marks that would share a column are dropped rather than
+  smeared into a wall, which is why a long stoppage shows as a jump in the
+  labels.
 - A stoppage breaks the strip. The threshold is a multiple of the build's own
   median layer time rather than a number of minutes, so it means the same on a
   fast machine and a slow one. Nothing is wrong with the layers either side --

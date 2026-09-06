@@ -552,7 +552,7 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   /* The band at the top the playhead's handle sits in, so it never covers the
      bar it is pointing at. Read back by renderScrubber(), which insets the
      bars by it -- one definition, in the place that owns the layout. */
-  --playhead-gutter: 14px;
+  --playhead-gutter: 20px;
 
   position: relative;
   /* Tall enough to pinch on: two fingers need somewhere to land that is not
@@ -589,8 +589,10 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 .scrub-playhead {
   position: absolute;
   /* Starts at its own cap rather than at the top edge, so no stub of line
-     shows above the handle. */
-  top: calc(var(--playhead-gutter) / 2);
+     shows above the handle. Two thirds down the gutter, which leaves the top of
+     it to the ruler's labels: the handle travels, and would otherwise wipe one
+     out as it passed. */
+  top: calc(var(--playhead-gutter) * 0.66);
   bottom: 0;
   width: 2px;
   margin-left: -1px;
@@ -719,8 +721,8 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
    the things this page is read for. */
 .transport-button {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   place-items: center;
   padding: 0;
@@ -734,7 +736,7 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 .transport-button:hover:not(:disabled) { background: rgb(255 255 255 / 6%); color: var(--text); }
 .transport-button:disabled { opacity: 0.3; cursor: default; }
 .transport-button[aria-pressed="true"] { color: var(--accent); }
-.transport-button svg { width: 13px; height: 13px; fill: currentcolor; }
+.transport-button svg { width: 16px; height: 16px; fill: currentcolor; }
 .transport-button .icon-pause,
 .transport-button[aria-pressed="true"] .icon-play { display: none; }
 .transport-button[aria-pressed="true"] .icon-pause { display: inline; }
@@ -978,6 +980,8 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .argon-panel { margin-top: 0; }
   .chart-card { min-height: 200px; }
   .scrubber { height: 78px; }
+  .transport-button { width: 36px; height: 36px; }
+  .transport-button svg { width: 18px; height: 18px; }
   .navigator { height: 48px; }
   .filmstrip { min-height: 96px; }
 }

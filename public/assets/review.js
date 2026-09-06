@@ -109,11 +109,12 @@ const RUNWAY_WINDOW = 40;
 const PLAY_INTERVAL_MS = 160;
 // Ticks nearer than this are the same column of the strip; a stoppage would
 // otherwise stack a day of them on one pixel.
-const TICK_MIN_GAP_PX = 26;
+const TICK_MIN_GAP_PX = 62;
 const PAUSE_MIN_GAP_PX = 14;
 // The ruler sits in the lower part of the playhead's band, leaving the top of
 // it for the handle.
 const RULER_TICK_PX = 4;
+const RULER_FONT = '9px Consolas, "Courier New", monospace';
 
 // What the elapsed figures may be called. The timestamps are analysis times:
 // the frame's own on a live run, the replay's on a batch one. Saying "print
@@ -1312,12 +1313,26 @@ function renderScrubber() {
   // and crowd where it was not, which is the only thing on this page that shows
   // the build's pace. Nothing here is coloured, because the strip's colours
   // mean verdicts and a clock is not one.
-  for (const tick of elapsedTicks(visible, width, TICK_MIN_GAP_PX)) {
-    const x = xOfIndex(state.window.from + tick.index, width);
-    context.fillStyle = 'rgb(255 255 255 / 30%)';
+  // Labelled, because the interval changes with the zoom: an unlabelled notch
+  // means one thing at the whole build and another an hour into it, and the
+  // operator has no way to tell which they are looking at. The marks are
+  // absolute times from the build's first layer, so they stay put as the
+  // window pans.
+  context.font = RULER_FONT;
+  context.textBaseline = 'top';
+  for (const tick of elapsedTicks(series().elapsed, state.window, width, TICK_MIN_GAP_PX)) {
+    const x = xOfIndex(tick.index, width);
+    context.fillStyle = 'rgb(255 255 255 / 34%)';
     context.fillRect(x, gutter - RULER_TICK_PX, 1, RULER_TICK_PX);
     context.fillStyle = 'rgb(255 255 255 / 7%)';
     context.fillRect(x, gutter, 1, barArea);
+    const label = formatElapsed(tick.elapsedMs);
+    // Kept inside the strip at the right-hand end rather than clipped away.
+    const room = width - x - 3;
+    context.fillStyle = 'rgb(255 255 255 / 42%)';
+    if (context.measureText(label).width <= room) {
+      context.fillText(label, x + 3, 1);
+    }
   }
 
   // Where the machine stopped, drawn as a break in the strip rather than a

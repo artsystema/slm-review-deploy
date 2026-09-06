@@ -15,6 +15,7 @@ import {
   clampWindow,
   decimate,
   defectRateSeries,
+  elapsedSeries,
   elapsedTicks,
   formatElapsed,
   isWholeBuild,
@@ -271,53 +272,90 @@ describe('elapsedTicks', () => {
       return { ...completed('none'), captured_at: new Date(at).toISOString() };
     });
   };
+  const whole = layers => ({ from: 0, count: layers.length });
+  const ticksOf = (layers, window, width = 800, gap = 20) =>
+    elapsedTicks(elapsedSeries(layers), window ?? whole(layers), width, gap);
 
   it('picks an interval a person can read for the span it has', () => {
-    // Two hours of layers: quarter hours, not seconds and not days.
-    const short = elapsedTicks(build(240, 30), 800, 20);
-    const shortStep = short[1].elapsedMs - short[0].elapsedMs;
-    assert.ok(shortStep <= 30 * 60e3, `two-hour print ticked every ${shortStep / 60e3} min`);
-
-    // Two days of layers: hours, not quarter hours.
-    const long = elapsedTicks(build(3617, 52 * 3600 / 3617), 800, 20);
-    const longStep = long[1].elapsedMs - long[0].elapsedMs;
-    assert.ok(longStep >= 3600e3, `two-day print ticked every ${longStep / 60e3} min`);
+    const short = ticksOf(build(240, 30));
+    assert.ok(short[1].elapsedMs - short[0].elapsedMs <= 30 * 60e3, 'two hours wants minutes');
+    const long = ticksOf(build(3617, 52 * 3600 / 3617));
+    assert.ok(long[1].elapsedMs - long[0].elapsedMs >= 3600e3, 'two days wants hours');
   });
 
   it('keeps the tick count readable however long the build ran', () => {
     for (const [n, stepS] of [[120, 20], [1000, 30], [3617, 52], [8000, 120]]) {
-      const ticks = elapsedTicks(build(n, stepS), 800, 20);
-      assert.ok(ticks.length <= 14, `${n} layers gave ${ticks.length} ticks`);
+      const layers = build(n, stepS);
+      assert.ok(ticksOf(layers).length <= 14, `${n} layers`);
     }
   });
 
+  it('measures from the build, not from the edge of the window', () => {
+    const layers = build(2000, 36);            // 20 hours
+    const elapsed = elapsedSeries(layers);
+    // Any window must place a given mark on the same layer.
+    const wide = elapsedTicks(elapsed, { from: 0, count: 2000 }, 800, 20);
+    const narrow = elapsedTicks(elapsed, { from: 600, count: 500 }, 800, 20);
+    for (const tick of narrow) {
+      assert.equal(tick.elapsedMs % (narrow[0].elapsedMs - 0), tick.elapsedMs % (narrow[0].elapsedMs),
+        'marks are multiples of one interval');
+    }
+    // A mark common to both windows sits on the same layer in each.
+    const shared = wide.find(w => narrow.some(n => n.elapsedMs === w.elapsedMs));
+    if (shared) {
+      const same = narrow.find(n => n.elapsedMs === shared.elapsedMs);
+      assert.ok(Math.abs(same.index - shared.index) <= 1,
+        `the same time landed on layer ${shared.index} and ${same.index}`);
+    }
+  });
+
+  it('does not move its marks when the window slides, as playback slides it', () => {
+    const layers = build(3000, 32);
+    const elapsed = elapsedSeries(layers);
+    const before = elapsedTicks(elapsed, { from: 1000, count: 400 }, 800, 20);
+    const after = elapsedTicks(elapsed, { from: 1010, count: 400 }, 800, 20);
+    const commonTimes = before.map(t => t.elapsedMs).filter(t => after.some(a => a.elapsedMs === t));
+    assert.ok(commonTimes.length > 0, 'a ten-layer nudge threw every mark away');
+    for (const time of commonTimes) {
+      assert.equal(before.find(t => t.elapsedMs === time).index,
+        after.find(t => t.elapsedMs === time).index,
+        `the mark for ${time}ms moved to a different layer`);
+    }
+  });
+
+  it('gives finer marks as the window narrows', () => {
+    const layers = build(3617, 52 * 3600 / 3617);
+    const elapsed = elapsedSeries(layers);
+    const wide = elapsedTicks(elapsed, { from: 0, count: 3617 }, 800, 20);
+    const tight = elapsedTicks(elapsed, { from: 1000, count: 120 }, 800, 20);
+    const step = list => list[1].elapsedMs - list[0].elapsedMs;
+    assert.ok(step(tight) < step(wide), 'zooming in did not buy a finer clock');
+  });
+
   it('does not smear a stoppage into a wall of ticks', () => {
-    // Fourteen hours between two adjacent layers, as session 0109-shell had.
     const layers = build(600, 32, { 300: 14 * 3600 });
-    const ticks = elapsedTicks(layers, 800, 20);
-    const atStall = ticks.filter(tick => tick.index === 300);
-    assert.ok(atStall.length <= 1, `${atStall.length} ticks stacked on one column`);
-    const span = Math.max(1, layers.length - 1);
+    const ticks = ticksOf(layers);
+    assert.ok(ticks.filter(t => t.index === 300).length <= 1, 'ticks stacked on one column');
     for (let i = 1; i < ticks.length; i += 1) {
-      const gap = ((ticks[i].index - ticks[i - 1].index) / span) * 800;
+      const gap = ((ticks[i].index - ticks[i - 1].index) / 599) * 800;
       assert.ok(gap >= 20 - 1e-9, `ticks ${gap.toFixed(1)}px apart`);
     }
   });
 
-  it('runs forward along the strip and stays inside it', () => {
+  it('runs forward along the strip and stays inside the window', () => {
     const layers = build(1000, 30);
-    const ticks = elapsedTicks(layers, 800, 20);
+    const ticks = elapsedTicks(elapsedSeries(layers), { from: 200, count: 400 }, 800, 20);
     for (let i = 1; i < ticks.length; i += 1) {
       assert.ok(ticks[i].index > ticks[i - 1].index);
       assert.ok(ticks[i].elapsedMs > ticks[i - 1].elapsedMs);
     }
-    assert.ok(ticks.at(-1).index < layers.length);
+    assert.ok(ticks.every(t => t.index >= 200 && t.index < 600));
   });
 
   it('has nothing to say about a build with no time in it', () => {
-    assert.deepEqual(elapsedTicks(build(1, 30), 800, 20), []);
-    assert.deepEqual(elapsedTicks(build(50, 0), 800, 20), []);
-    assert.deepEqual(elapsedTicks([], 800, 20), []);
+    assert.deepEqual(ticksOf(build(1, 30)), []);
+    assert.deepEqual(ticksOf(build(50, 0)), []);
+    assert.deepEqual(elapsedTicks([], { from: 0, count: 0 }, 800, 20), []);
   });
 });
 

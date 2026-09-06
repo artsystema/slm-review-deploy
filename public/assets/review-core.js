@@ -266,38 +266,53 @@ export function elapsedSeries(layers) {
 }
 
 /**
- * Where round elapsed times fall along a strip indexed by layer.
+ * Where round elapsed times fall along the strip, for the window it is showing.
+ *
+ * The marks are absolute: multiples of the interval counted from the build's
+ * own first layer, not from whichever layer happens to be leftmost. Measuring
+ * from the window's edge made a mark mean a different thing at every zoom
+ * level, and slide along the strip as playback pushed the window forward --
+ * which is no use as a clock.
  *
  * The x axis counts layers, not seconds, so time runs along it at whatever pace
- * the machine managed: ticks spread out where layers came quickly and crowd
- * where they did not. That is the point -- it is the only thing on this page
- * that shows the build's pace -- but it means a stoppage stacks many ticks on
- * one column, so ticks closer together than `minGapPx` are dropped rather than
- * drawn as a smear that reads as detail.
+ * the machine managed: marks spread where layers came quickly and crowd where
+ * they did not. That is the point, and it is also why marks closer together
+ * than `minGapPx` are dropped rather than drawn as a smear that reads as
+ * detail. The interval is chosen for the span actually on screen, so zooming in
+ * gives finer marks rather than the same ones further apart.
  *
- * The interval is chosen for the span: a two-hour print gets quarter hours, a
- * two-day one gets six-hour marks.
- *
- * @returns {Array<{index: number, elapsedMs: number}>}
+ * @param {Array<number|null>} elapsed whole-build series, from elapsedSeries()
+ * @param {{from: number, count: number}} window the layers on screen
+ * @returns {Array<{index: number, elapsedMs: number}>} index is a build position
  */
-export function elapsedTicks(layers, width, minGapPx, maxTicks = 14) {
-  const elapsed = elapsedSeries(layers);
-  const last = [...elapsed].reverse().find(value => value != null);
-  if (layers.length < 2 || last == null || last <= 0 || width <= 0) return [];
-  const interval = TICK_INTERVALS_MS.find(step => last / step <= maxTicks)
+export function elapsedTicks(elapsed, window, width, minGapPx, maxTicks = 14) {
+  const from = Math.max(0, window.from);
+  const end = Math.min(elapsed.length, from + window.count);
+  if (end - from < 2 || width <= 0) return [];
+  let firstAt = null;
+  let lastAt = null;
+  for (let index = from; index < end; index += 1) {
+    if (elapsed[index] == null) continue;
+    if (firstAt === null) firstAt = elapsed[index];
+    lastAt = elapsed[index];
+  }
+  if (firstAt === null || lastAt === null || lastAt <= firstAt) return [];
+  const span = lastAt - firstAt;
+  const interval = TICK_INTERVALS_MS.find(step => span / step <= maxTicks)
     ?? TICK_INTERVALS_MS[TICK_INTERVALS_MS.length - 1];
-  const span = Math.max(1, layers.length - 1);
   const ticks = [];
-  let cursor = 0;
+  const denominator = Math.max(1, window.count - 1);
+  let cursor = from;
   let lastX = -Infinity;
-  for (let mark = interval; mark <= last; mark += interval) {
+  const firstMark = Math.max(interval, Math.ceil(firstAt / interval) * interval);
+  for (let mark = firstMark; mark <= lastAt; mark += interval) {
     // Monotonic sweep: the strip is in build order, which for a live run is
     // also time order, and a cursor that never rewinds keeps this linear.
-    while (cursor < elapsed.length && (elapsed[cursor] == null || elapsed[cursor] < mark)) {
+    while (cursor < end && (elapsed[cursor] == null || elapsed[cursor] < mark)) {
       cursor += 1;
     }
-    if (cursor >= elapsed.length) break;
-    const x = (cursor / span) * width;
+    if (cursor >= end) break;
+    const x = ((cursor - from) / denominator) * width;
     if (x - lastX < minGapPx) continue;
     lastX = x;
     ticks.push({ index: cursor, elapsedMs: mark });
