@@ -754,7 +754,13 @@ function rememberDetail(layer) {
  * -- the strip and the charts are drawn from the index, which is already here.
  */
 async function ensureDetail(index) {
-  if (moving()) return;
+  // Scrubbing only. A drag passes hundreds of layers a second and must not ask
+  // for any of them; playing passes six, and a window of detail covers several
+  // seconds of it -- roughly one request per four seconds of playback. Not
+  // fetching while playing was why a build played back in one view kept
+  // flicking to another: layers whose detail had not arrived fell back to the
+  // index's preview, which is the analysis view whatever view is being held.
+  if (state.scrubbing) return;
   const known = offset => {
     const layer = state.layers[index + offset];
     return !layer || state.detail.has(layer.id) || state.detailPending.has(layer.id);
@@ -815,10 +821,9 @@ function detailLoaded(layer) {
 /**
  * Whether the selection is travelling rather than settled.
  *
- * Dragging the timeline and playing through the build are the same problem:
- * hundreds of layers pass that nobody is stopping on. Both show each layer's
- * own preview and neither asks the server for detail; the evidence is loaded
- * for wherever the movement ends.
+ * Both a drag and playback fall back to each layer's preview where its detail
+ * has not arrived, and neither is a moment to poll for new layers. They differ
+ * in what they may ask the server for: see ensureDetail().
  */
 function moving() {
   return state.scrubbing || state.playing;
@@ -1038,6 +1043,12 @@ function playTick() {
   if (!next) { setPlaying(false); return; }
   state.selectedId = next.id;
   keepSelectionVisible();
+  // Keep the detail window ahead of the playhead. Without this, playback runs
+  // off the end of what is held after a dozen layers and every layer after
+  // that falls back to the index's preview -- which is the analysis view
+  // whatever view the operator is holding, so a build played back in one view
+  // starts flicking to another.
+  ensureDetail(selectedIndex());
   // The parts that change per layer only. The hash is written once on stop
   // rather than a hundred times on the way there.
   renderStage();
@@ -1543,6 +1554,9 @@ function scrubIndexFrom(event) {
 }
 
 function tickScrubber(pointerType) {
+  // A pinch is two fingers on the strip changing the view, not one crossing
+  // layers; ticking through it buzzes continuously for nothing.
+  if (scrubPointers.size > 1 || pinch) return;
   if (pointerType !== 'touch'
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     || typeof navigator.vibrate !== 'function') return;
