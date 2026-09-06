@@ -1531,6 +1531,8 @@ let lastScrubHapticAt = -Infinity;
 // gearing changes -- the finger stays on the layer it was on and simply starts
 // moving through them more slowly.
 let scrubAnchor = null;
+// The selection a drag began from, so a pinch can restore it.
+let selectionBeforeScrub = null;
 
 function naturalLayersPerPx() {
   const width = scrubber.clientWidth;
@@ -1600,6 +1602,10 @@ function scrubTo(index, clientX) {
 
 scrubber.addEventListener('pointerdown', event => {
   if (!state.layers.length) return;
+  // A second finger means the strip is being zoomed, not scrubbed. Without
+  // this the second touch started a drag of its own and the frame jumped to
+  // wherever it happened to land.
+  if (scrubPointers.size > 1 || pinch) return;
   // Capture is what keeps a drag alive once the finger leaves the strip, which
   // fine scrubbing depends on -- but a failure to obtain it must not abandon
   // the drag half-configured and leave the strip dead to the touch.
@@ -1623,6 +1629,7 @@ scrubber.addEventListener('pointerdown', event => {
     x: event.clientX, originY: event.clientY, index, rung: 0,
     layersPerPx: naturalLayersPerPx(),
   };
+  selectionBeforeScrub = state.selectedId;
   if (index !== selectedIndex()) tickScrubber(event.pointerType);
   scrubTo(index, event.clientX);
 });
@@ -1640,6 +1647,36 @@ scrubber.addEventListener('pointermove', event => {
   if (index !== selectedIndex()) tickScrubber(event.pointerType);
   scrubTo(index, event.clientX);
 });
+
+/**
+ * Abandon a drag that turned out to be the start of a pinch.
+ *
+ * The first finger of a pinch lands as an ordinary press and moves the
+ * selection under it. When the second arrives the gesture is revealed as a view
+ * change, so the frame goes back to the one the operator was looking at:
+ * zooming the timeline is not a way of choosing a layer.
+ */
+function cancelScrub(event) {
+  if (!state.scrubbing) return;
+  state.scrubbing = false;
+  scrubber.classList.remove('is-scrubbing');
+  try {
+    if (event && scrubber.hasPointerCapture?.(event.pointerId)) {
+      scrubber.releasePointerCapture(event.pointerId);
+    }
+  } catch {
+    // See endScrub: a capture that was never granted is not a failure.
+  }
+  bubble.hidden = true;
+  scrubAnchor = null;
+  if (scrubFrame) { cancelAnimationFrame(scrubFrame); scrubFrame = 0; }
+  scrubTarget = null;
+  if (selectionBeforeScrub != null && state.selectedId !== selectionBeforeScrub) {
+    state.selectedId = selectionBeforeScrub;
+    renderSelection();
+  }
+  selectionBeforeScrub = null;
+}
 
 function endScrub(event) {
   if (!state.scrubbing) return;
@@ -1662,6 +1699,7 @@ function endScrub(event) {
   const pending = scrubTarget ? state.layers[scrubTarget.index] : null;
   if (pending) state.selectedId = pending.id;
   scrubTarget = null;
+  selectionBeforeScrub = null;
   const layer = selected();
   if (layer) activateLayer(layer);
 }
@@ -1688,8 +1726,9 @@ function pinchOf() {
 scrubber.addEventListener('pointerdown', event => {
   scrubPointers.set(event.pointerId, { x: event.clientX });
   if (scrubPointers.size === 2) {
-    // The drag that was under way is abandoned: this is a view gesture now.
-    endScrub(event);
+    // The drag that was under way is abandoned, and the frame it moved to is
+    // handed back: this is a view gesture now.
+    cancelScrub(event);
     pinch = { ...pinchOf(), window: { ...state.window } };
   }
 }, true);
