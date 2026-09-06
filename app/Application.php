@@ -347,14 +347,32 @@ final class Application
               <div id="scrub-bubble" class="scrub-bubble" aria-hidden="true"></div>
             </div>
             <div class="timeline-foot">
-              <button id="play-toggle" class="play-toggle" type="button" aria-pressed="false" aria-label="Play through the build">
-                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                  <path class="icon-play" d="M5.5 3.6 12 8l-6.5 4.4z"/>
-                  <path class="icon-pause" d="M5 3.5h2.2v9H5zm3.8 0H11v9H8.8z"/>
-                </svg>
-              </button>
+              <div class="transport" role="group" aria-label="Timeline transport">
+                <button id="play-back" class="transport-button" type="button" aria-pressed="false" aria-label="Play backwards through the build">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path class="icon-play" d="M10.5 3.6 4 8l6.5 4.4z"/>
+                    <path class="icon-pause" d="M5 3.5h2.2v9H5zm3.8 0H11v9H8.8z"/>
+                  </svg>
+                </button>
+                <button id="step-back" class="transport-button" type="button" aria-label="Previous layer">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M11 3.6 5.6 8 11 12.4zM5 3.5h1.6v9H5z"/>
+                  </svg>
+                </button>
+                <button id="step-forward" class="transport-button" type="button" aria-label="Next layer">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M5 3.6 10.4 8 5 12.4zM9.4 3.5H11v9H9.4z"/>
+                  </svg>
+                </button>
+                <button id="play-toggle" class="transport-button" type="button" aria-pressed="false" aria-label="Play through the build">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path class="icon-play" d="M5.5 3.6 12 8l-6.5 4.4z"/>
+                    <path class="icon-pause" d="M5 3.5h2.2v9H5zm3.8 0H11v9H8.8z"/>
+                  </svg>
+                </button>
+              </div>
               <span id="timeline-count" class="timeline-count"></span>
-              <span class="keyboard-hint">Drag to scrub &middot; arrows to step &middot; double-tap to zoom</span>
+              <span class="keyboard-hint">Drag to scrub, away for fine &middot; arrows to step &middot; double-tap to zoom</span>
             </div>
             <div id="filmstrip" class="filmstrip" role="listbox" aria-label="Layer filmstrip"></div>
           </div>

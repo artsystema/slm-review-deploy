@@ -393,3 +393,42 @@ export function timeBasis(layers) {
   if (batch) return 'replay';
   return 'unknown';
 }
+
+// ---------- fine scrubbing ----------
+
+/**
+ * How many layers a pixel of drag should cover, as the finger moves away.
+ *
+ * A build of thousands on a phone puts ten layers under every pixel, so a five
+ * pixel wobble throws the selection fifty layers and no amount of care lands on
+ * the one being looked for. Rather than zooming the strip -- which costs the
+ * whole-build view, the thing the strip is for -- the drag itself gets slower
+ * the further the finger moves off it, the way a video scrubber does. The strip
+ * keeps showing the entire build; only the gearing changes.
+ *
+ * The rungs are stated as layers per pixel rather than as ratios, so they mean
+ * the same thing on a four-thousand-layer build and a three-hundred one, and a
+ * short build is never geared down past what it needs.
+ */
+const SCRUB_RUNGS = [
+  { awayPx: 30, layersPerPx: 2 },
+  { awayPx: 68, layersPerPx: 0.5 },
+  { awayPx: 116, layersPerPx: 0.15 },
+];
+
+/**
+ * @param {number} awayPx how far the pointer is from where the drag began
+ * @param {number} naturalLayersPerPx the strip's own scale
+ * @returns {{scale: number, layersPerPx: number, rung: number}} scale <= 1
+ */
+export function scrubScale(awayPx, naturalLayersPerPx) {
+  const natural = naturalLayersPerPx > 0 ? naturalLayersPerPx : 0;
+  let rung = 0;
+  for (let index = 0; index < SCRUB_RUNGS.length; index += 1) {
+    if (Math.abs(awayPx) >= SCRUB_RUNGS[index].awayPx) rung = index + 1;
+  }
+  if (rung === 0 || natural === 0) return { scale: 1, layersPerPx: natural, rung: 0 };
+  // Never gear up: a build already finer than the rung asks for is left alone.
+  const scale = Math.min(1, SCRUB_RUNGS[rung - 1].layersPerPx / natural);
+  return { scale, layersPerPx: natural * scale, rung: scale < 1 ? rung : 0 };
+}

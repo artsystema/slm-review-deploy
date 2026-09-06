@@ -652,9 +652,11 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 .timeline-count { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 650; }
 .timeline-foot .keyboard-hint { margin-left: auto; }
 
-/* Deliberately small and quiet: playing through a build is a convenience, not
-   one of the things this page is read for. */
-.play-toggle {
+.transport { display: flex; flex: 0 0 auto; align-items: center; gap: 1px; }
+
+/* Deliberately small and quiet: walking a build is a convenience, not one of
+   the things this page is read for. */
+.transport-button {
   display: grid;
   width: 22px;
   height: 22px;
@@ -668,13 +670,13 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   cursor: pointer;
 }
 
-.play-toggle:hover:not(:disabled) { background: rgb(255 255 255 / 6%); color: var(--text); }
-.play-toggle:disabled { opacity: 0.35; cursor: default; }
-.play-toggle[aria-pressed="true"] { color: var(--accent); }
-.play-toggle svg { width: 13px; height: 13px; fill: currentcolor; }
-.play-toggle .icon-pause,
-.play-toggle[aria-pressed="true"] .icon-play { display: none; }
-.play-toggle[aria-pressed="true"] .icon-pause { display: inline; }
+.transport-button:hover:not(:disabled) { background: rgb(255 255 255 / 6%); color: var(--text); }
+.transport-button:disabled { opacity: 0.3; cursor: default; }
+.transport-button[aria-pressed="true"] { color: var(--accent); }
+.transport-button svg { width: 13px; height: 13px; fill: currentcolor; }
+.transport-button .icon-pause,
+.transport-button[aria-pressed="true"] .icon-play { display: none; }
+.transport-button[aria-pressed="true"] .icon-pause { display: inline; }
 
 .evidence-card { display: flex; padding: 12px; flex-direction: column; gap: 12px; }
 

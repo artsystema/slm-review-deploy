@@ -19,6 +19,7 @@ import {
   loadedColumns,
   longPauses,
   scrollOffsetFor,
+  scrubScale,
   severityColumns,
   timeBasis,
   visibleWindow,
@@ -422,5 +423,46 @@ describe('timeBasis', () => {
 
   it('says unknown for an empty session rather than guessing', () => {
     assert.equal(timeBasis([]), 'unknown');
+  });
+});
+
+describe('scrubScale', () => {
+  // 3,617 layers across a 370px phone strip, as session 0109-shell is.
+  const phone = 3617 / 370;
+
+  it('tracks the finger one for one while it stays on the strip', () => {
+    assert.equal(scrubScale(0, phone).scale, 1);
+    assert.equal(scrubScale(29, phone).scale, 1);
+    assert.equal(scrubScale(29, phone).rung, 0);
+  });
+
+  it('gears down the further the finger goes', () => {
+    const rungs = [30, 68, 116].map(away => scrubScale(away, phone));
+    for (let i = 1; i < rungs.length; i += 1) {
+      assert.ok(rungs[i].scale < rungs[i - 1].scale, `rung ${i} was not finer`);
+    }
+    assert.ok(rungs[0].layersPerPx <= 2.01);
+    assert.ok(rungs[2].layersPerPx <= 0.16, 'the finest rung must reach single layers');
+  });
+
+  it('makes the worst case usable', () => {
+    // A five pixel wobble threw the selection 49 layers; on the finest rung it
+    // must move less than one.
+    assert.ok(scrubScale(140, phone).layersPerPx * 5 < 1);
+  });
+
+  it('never gears a short build down past what it needs', () => {
+    // 300 layers on a wide strip is already under a layer a pixel.
+    const already = 300 / 1030;
+    assert.equal(scrubScale(40, already).scale, 1, 'geared down a build that was already fine');
+    assert.equal(scrubScale(40, already).rung, 0, 'reported fine mode it did not enter');
+  });
+
+  it('is symmetric: it is distance from the strip that matters, not which way', () => {
+    assert.deepEqual(scrubScale(-80, phone), scrubScale(80, phone));
+  });
+
+  it('says nothing useful about a strip with no width', () => {
+    assert.equal(scrubScale(200, 0).scale, 1);
   });
 });

@@ -10,6 +10,7 @@ import {
   longPauses,
   isFlagged,
   scrollOffsetFor,
+  scrubScale,
   severityColumns,
   severityToken,
   timeBasis,
@@ -36,6 +37,7 @@ const state = {
   fill: false,
   grid: false,
   playing: false,
+  playDirection: 1,
   playTimer: null,
 };
 
@@ -62,6 +64,9 @@ const timelineCount = el('timeline-count');
 const fillToggle = el('fill-toggle');
 const gridToggle = el('grid-toggle');
 const playToggle = el('play-toggle');
+const playBack = el('play-back');
+const stepBackButton = el('step-back');
+const stepForwardButton = el('step-forward');
 const stageGrid = el('stage-grid');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
@@ -952,20 +957,19 @@ function activateLayer(layer, userDriven = true) {
  * stops at the end of the build or the moment the operator takes over. The
  * evidence for wherever it stopped is loaded then.
  */
-function setPlaying(playing) {
-  const atEnd = selectedIndex() >= state.layers.length - 1;
-  const next = playing && state.layers.length > 1 && !atEnd;
-  if (next === state.playing) {
+function setPlaying(playing, direction = state.playDirection) {
+  const next = playing && state.layers.length > 1 && roomToPlay(direction);
+  if (next === state.playing && direction === state.playDirection) {
     if (!next) stopPlayback();
     return;
   }
   state.playing = next;
-  playToggle.setAttribute('aria-pressed', String(next));
-  playToggle.setAttribute('aria-label', next ? 'Stop playing' : 'Play through the build');
+  state.playDirection = direction;
   window.clearInterval(state.playTimer);
+  updateTransport();
   if (next) {
-    // Playing is a way of looking back through a build, so it stops following
-    // the live end rather than fighting the poll for the selection.
+    // Playing is a way of looking through a build, so it stops following the
+    // live end rather than fighting the poll for the selection.
     if (state.follow) setFollow(false);
     state.playTimer = window.setInterval(playTick, PLAY_INTERVAL_MS);
   } else {
@@ -973,14 +977,34 @@ function setPlaying(playing) {
   }
 }
 
+/** Whether there is any build left in the direction asked for. */
+function roomToPlay(direction) {
+  const at = selectedIndex();
+  return direction > 0 ? at < state.layers.length - 1 : at > 0;
+}
+
+/** The transport reflects both what it is doing and what it could do. */
+function updateTransport() {
+  const forward = state.playing && state.playDirection > 0;
+  const backward = state.playing && state.playDirection < 0;
+  playToggle.setAttribute('aria-pressed', String(forward));
+  playBack.setAttribute('aria-pressed', String(backward));
+  playToggle.setAttribute('aria-label', forward ? 'Stop playing' : 'Play through the build');
+  playBack.setAttribute('aria-label', backward ? 'Stop playing' : 'Play backwards through the build');
+  // A control that does nothing when pressed reads as a broken one.
+  const total = state.layers.length;
+  const at = selectedIndex();
+  playToggle.disabled = total < 2 || (!forward && at >= total - 1);
+  playBack.disabled = total < 2 || (!backward && at <= 0);
+  stepForwardButton.disabled = total < 2 || at >= total - 1;
+  stepBackButton.disabled = total < 2 || at <= 0;
+}
+
 function stopPlayback() {
   window.clearInterval(state.playTimer);
   state.playTimer = null;
-  if (state.playing) {
-    state.playing = false;
-    playToggle.setAttribute('aria-pressed', 'false');
-    playToggle.setAttribute('aria-label', 'Play through the build');
-  }
+  state.playing = false;
+  updateTransport();
   // Settled: the frame the operator is now looking at earns its evidence.
   renderSelection();
   ensureDetail(selectedIndex());
@@ -988,8 +1012,7 @@ function stopPlayback() {
 }
 
 function playTick() {
-  const index = selectedIndex();
-  const next = state.layers[index + 1];
+  const next = state.layers[selectedIndex() + state.playDirection];
   if (!next) { setPlaying(false); return; }
   state.selectedId = next.id;
   // The parts that change per layer only. The hash is written once on stop
@@ -1000,7 +1023,10 @@ function playTick() {
   revealLayerChip(next.id, 'auto');
 }
 
-playToggle.addEventListener('click', () => setPlaying(!state.playing));
+playToggle.addEventListener('click', () => setPlaying(!(state.playing && state.playDirection > 0), 1));
+playBack.addEventListener('click', () => setPlaying(!(state.playing && state.playDirection < 0), -1));
+stepBackButton.addEventListener('click', () => stepLayer(-1));
+stepForwardButton.addEventListener('click', () => stepLayer(1));
 
 function stepLayer(offset) {
   const next = state.layers[clamp(selectedIndex() + offset, 0, state.layers.length - 1)];
@@ -1295,9 +1321,7 @@ function positionPlayhead() {
   scrubber.setAttribute('aria-valuetext', current
     ? `Layer ${current.index}, ${current.analysis.severity || 'unknown'}`
     : 'No layers');
-  // There is nothing ahead to play once the selection is at the end, and a
-  // control that does nothing when pressed reads as a broken one.
-  playToggle.disabled = total < 2 || at >= total - 1;
+  updateTransport();
   if (!total) { playhead.hidden = true; return; }
   playhead.hidden = false;
   playhead.style.left = `${((at + 0.5) / total) * 100}%`;
@@ -1315,7 +1339,10 @@ function showBubble(index, clientX) {
   if (!layer) { bubble.hidden = true; return; }
   const bounds = scrubber.getBoundingClientRect();
   bubble.hidden = false;
-  bubble.textContent = `L${layer.index} · ${shortStamp(layer.captured_at)}`;
+  const fine = scrubAnchor?.rung
+    ? ` · fine ${scrubAnchor.layersPerPx < 1 ? '1:1' : `${Math.round(scrubAnchor.layersPerPx)}/px`}`
+    : '';
+  bubble.textContent = `L${layer.index} · ${shortStamp(layer.captured_at)}${fine}`;
   bubble.dataset.severity = severityToken(layer.analysis.severity);
   const offset = clamp(clientX - bounds.left, 28, Math.max(28, bounds.width - 28));
   bubble.style.left = `${offset}px`;
@@ -1324,6 +1351,30 @@ function showBubble(index, clientX) {
 let scrubFrame = 0;
 let scrubTarget = null;
 let lastScrubHapticAt = -Infinity;
+// Where the drag last re-anchored, and at what gearing. Re-anchoring on every
+// change of rung is what keeps the layer under the finger from jumping when the
+// gearing changes -- the finger stays on the layer it was on and simply starts
+// moving through them more slowly.
+let scrubAnchor = null;
+
+function naturalLayersPerPx() {
+  const width = scrubber.clientWidth;
+  return width > 0 ? state.layers.length / width : 0;
+}
+
+/** The layer a drag has reached, geared by how far the finger has moved away. */
+function scrubIndexFrom(event) {
+  if (!scrubAnchor) return indexFromPointer(event.clientX);
+  const away = event.clientY - scrubAnchor.originY;
+  const geared = scrubScale(away, naturalLayersPerPx());
+  if (geared.rung !== scrubAnchor.rung) {
+    // Re-anchor here, at the layer currently under the finger.
+    scrubAnchor = { ...scrubAnchor, x: event.clientX, index: selectedIndex(), rung: geared.rung };
+  }
+  scrubAnchor.layersPerPx = geared.layersPerPx;
+  const moved = (event.clientX - scrubAnchor.x) * geared.layersPerPx;
+  return clamp(Math.round(scrubAnchor.index + moved), 0, state.layers.length - 1);
+}
 
 function tickScrubber(pointerType) {
   if (pointerType !== 'touch'
@@ -1381,6 +1432,10 @@ scrubber.addEventListener('pointerdown', event => {
   scrubber.classList.add('is-pointer-focus');
   scrubber.focus({ preventScroll: true });
   const index = indexFromPointer(event.clientX);
+  scrubAnchor = {
+    x: event.clientX, originY: event.clientY, index, rung: 0,
+    layersPerPx: naturalLayersPerPx(),
+  };
   if (index !== selectedIndex()) tickScrubber(event.pointerType);
   scrubTo(index, event.clientX);
 });
@@ -1391,7 +1446,7 @@ scrubber.addEventListener('pointermove', event => {
     return;
   }
   event.preventDefault();
-  const index = indexFromPointer(event.clientX);
+  const index = scrubIndexFrom(event);
   // Against the last committed selection, not the pending one: the visual
   // update is throttled to one per frame, but a fast drag still crosses layer
   // boundaries between frames and each one should tick (rate-limited inside).
@@ -1405,6 +1460,7 @@ function endScrub(event) {
   scrubber.classList.remove('is-scrubbing');
   if (event && scrubber.hasPointerCapture?.(event.pointerId)) scrubber.releasePointerCapture(event.pointerId);
   bubble.hidden = true;
+  scrubAnchor = null;
   const layer = selected();
   if (layer) activateLayer(layer);
 }

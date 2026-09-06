@@ -132,11 +132,18 @@ does not bury the back button.
    values, not sent by the monitor. Confirm each frame carries the burned
    `<print name> | <capture time>` strip along its top. Then check the viewer
    behaviours the operator depends on:
-   - Press the play control under the timeline. The selection walks forward a
-     layer at a time showing each one's preview; pressing it again, stepping, or
-     dragging stops it and loads the evidence for the layer it stopped on. It
-     is disabled at the end of the build, and playing stops following the live
-     end rather than fighting the poll for the selection.
+   - Work the transport under the timeline: play backwards, step back, step
+     forward, play forward. Playing walks a layer at a time showing each one's
+     preview; pressing it again, stepping, or dragging stops it and loads the
+     evidence for the layer it stopped on. Each control is disabled when there
+     is no build left in its direction, and playing stops following the live end
+     rather than fighting the poll for the selection.
+   - Press on the timeline and drag *away* from it. A build of thousands puts
+     about ten layers under every pixel, so the drag gears down the further the
+     finger goes -- to roughly two layers a pixel, then half of one, then a
+     layer every several pixels -- and the bubble says when it has. The layer
+     under the finger does not jump as the gearing changes. A build already
+     finer than a rung asks for is left alone, so a short one never crawls.
    - Press and drag along the timeline directly under the image; frames follow
      the finger and the bubble names the layer being passed. While dragging,
      the frame is captioned as a scrub preview and the evidence for the layer
@@ -257,6 +264,9 @@ pixels rather than the layers:
   nothing left to load. The per-layer detail -- metrics, processor, media,
   reading ages -- is fetched for the layer being looked at and its neighbours,
   and the sidebar says "loading" rather than "unknown" while it is in flight.
+- Precision comes from gearing the drag, not from zooming the strip. Zooming
+  would cost the whole-build view, which is what the strip is for; the filmstrip
+  below already shows layers one at a time. See `scrubScale()`.
 - Above the bars is a time ruler: round elapsed times from the session's first
   layer, at an interval chosen for the span (six-hour marks on a two-day build,
   quarter hours on a two-hour one). The x axis counts layers, not seconds, so
