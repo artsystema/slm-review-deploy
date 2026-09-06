@@ -432,3 +432,24 @@ export function scrubScale(awayPx, naturalLayersPerPx) {
   const scale = Math.min(1, SCRUB_RUNGS[rung - 1].layersPerPx / natural);
   return { scale, layersPerPx: natural * scale, rung: scale < 1 ? rung : 0 };
 }
+
+/**
+ * The next layer with something wrong with it, in the direction asked.
+ *
+ * A build of thousands carries a few dozen findings -- session 0109-shell has
+ * 55 among 3,617 -- and reaching them by scrubbing means hunting for a bar a
+ * pixel wide. What the operator wants from this timeline is almost never a
+ * particular layer number; it is the next thing worth looking at.
+ *
+ * Ends rather than wraps: arriving back at the first finding after the last one
+ * would read as there being more of them than there are.
+ *
+ * @returns {number|null} layer position, or null when there are none that way
+ */
+export function nextFinding(layers, from, direction) {
+  const step = direction < 0 ? -1 : 1;
+  for (let index = from + step; index >= 0 && index < layers.length; index += step) {
+    if (isFlagged(layers[index])) return index;
+  }
+  return null;
+}

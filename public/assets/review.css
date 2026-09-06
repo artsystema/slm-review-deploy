@@ -640,6 +640,7 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 
 .timeline-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-height: 28px;
@@ -677,6 +678,12 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 .transport-button .icon-pause,
 .transport-button[aria-pressed="true"] .icon-play { display: none; }
 .transport-button[aria-pressed="true"] .icon-pause { display: inline; }
+
+/* Jumping between findings is what this timeline is read for, so those two are
+   tinted rather than left to look like more transport. */
+.transport-button.is-finding { color: var(--warn); opacity: 0.75; }
+.transport-button.is-finding:hover:not(:disabled) { opacity: 1; }
+.transport-button.is-finding:disabled { color: var(--text-dim); }
 
 .evidence-card { display: flex; padding: 12px; flex-direction: column; gap: 12px; }
 

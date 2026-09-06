@@ -18,6 +18,7 @@ import {
   formatElapsed,
   loadedColumns,
   longPauses,
+  nextFinding,
   scrollOffsetFor,
   scrubScale,
   severityColumns,
@@ -464,5 +465,44 @@ describe('scrubScale', () => {
 
   it('says nothing useful about a strip with no width', () => {
     assert.equal(scrubScale(200, 0).scale, 1);
+  });
+});
+
+describe('nextFinding', () => {
+  const build = flaggedAt => {
+    const layers = Array.from({ length: 200 }, () => completed('none'));
+    for (const index of flaggedAt) layers[index] = completed('warning');
+    return layers;
+  };
+
+  it('finds the next thing worth looking at', () => {
+    const layers = build([10, 50, 51, 180]);
+    assert.equal(nextFinding(layers, 0, 1), 10);
+    assert.equal(nextFinding(layers, 10, 1), 50);
+    assert.equal(nextFinding(layers, 50, 1), 51);
+  });
+
+  it('goes back as readily as forward', () => {
+    const layers = build([10, 50, 180]);
+    assert.equal(nextFinding(layers, 180, -1), 50);
+    assert.equal(nextFinding(layers, 51, -1), 50);
+  });
+
+  it('ends rather than wrapping', () => {
+    const layers = build([10, 180]);
+    assert.equal(nextFinding(layers, 180, 1), null);
+    assert.equal(nextFinding(layers, 10, -1), null);
+  });
+
+  it('does not count a layer that was never analysed as a finding', () => {
+    const layers = Array.from({ length: 50 }, () => pending());
+    layers[20] = completed('critical');
+    assert.equal(nextFinding(layers, 0, 1), 20);
+    assert.equal(nextFinding(layers, 20, 1), null);
+  });
+
+  it('says nothing to find in a clean build', () => {
+    assert.equal(nextFinding(build([]), 0, 1), null);
+    assert.equal(nextFinding([], 0, 1), null);
   });
 });

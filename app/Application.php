@@ -348,6 +348,12 @@ final class Application
             </div>
             <div class="timeline-foot">
               <div class="transport" role="group" aria-label="Timeline transport">
+                <button id="finding-back" class="transport-button is-finding" type="button" aria-label="Previous flagged layer" title="Previous flagged layer (N)">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M9.8 3.4 5.2 8l4.6 4.6V3.4z"/>
+                    <circle cx="12.1" cy="8" r="1.5"/>
+                  </svg>
+                </button>
                 <button id="play-back" class="transport-button" type="button" aria-pressed="false" aria-label="Play backwards through the build">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path class="icon-play" d="M10.5 3.6 4 8l6.5 4.4z"/>
@@ -370,9 +376,15 @@ final class Application
                     <path class="icon-pause" d="M5 3.5h2.2v9H5zm3.8 0H11v9H8.8z"/>
                   </svg>
                 </button>
+                <button id="finding-forward" class="transport-button is-finding" type="button" aria-label="Next flagged layer" title="Next flagged layer (n)">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M6.2 3.4 10.8 8l-4.6 4.6V3.4z"/>
+                    <circle cx="3.9" cy="8" r="1.5"/>
+                  </svg>
+                </button>
               </div>
               <span id="timeline-count" class="timeline-count"></span>
-              <span class="keyboard-hint">Drag to scrub, away for fine &middot; arrows to step &middot; double-tap to zoom</span>
+              <span class="keyboard-hint">Drag to scrub, away for fine &middot; arrows to step &middot; n for the next flagged layer</span>
             </div>
             <div id="filmstrip" class="filmstrip" role="listbox" aria-label="Layer filmstrip"></div>
           </div>

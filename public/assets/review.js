@@ -8,6 +8,7 @@ import {
   formatElapsed,
   loadedColumns,
   longPauses,
+  nextFinding,
   isFlagged,
   scrollOffsetFor,
   scrubScale,
@@ -67,6 +68,8 @@ const playToggle = el('play-toggle');
 const playBack = el('play-back');
 const stepBackButton = el('step-back');
 const stepForwardButton = el('step-forward');
+const findingBack = el('finding-back');
+const findingForward = el('finding-forward');
 const stageGrid = el('stage-grid');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
@@ -998,6 +1001,8 @@ function updateTransport() {
   playBack.disabled = total < 2 || (!backward && at <= 0);
   stepForwardButton.disabled = total < 2 || at >= total - 1;
   stepBackButton.disabled = total < 2 || at <= 0;
+  findingForward.disabled = nextFinding(state.layers, at, 1) == null;
+  findingBack.disabled = nextFinding(state.layers, at, -1) == null;
 }
 
 function stopPlayback() {
@@ -1027,6 +1032,16 @@ playToggle.addEventListener('click', () => setPlaying(!(state.playing && state.p
 playBack.addEventListener('click', () => setPlaying(!(state.playing && state.playDirection < 0), -1));
 stepBackButton.addEventListener('click', () => stepLayer(-1));
 stepForwardButton.addEventListener('click', () => stepLayer(1));
+
+/** Jump to the next flagged layer, which is what the strip is scanned for. */
+function goToFinding(direction) {
+  const at = nextFinding(state.layers, selectedIndex(), direction);
+  if (at == null) return;
+  activateLayer(state.layers[at]);
+}
+
+findingBack.addEventListener('click', () => goToFinding(-1));
+findingForward.addEventListener('click', () => goToFinding(1));
 
 function stepLayer(offset) {
   const next = state.layers[clamp(selectedIndex() + offset, 0, state.layers.length - 1)];
@@ -1951,6 +1966,11 @@ window.addEventListener('keydown', event => {
   if (event.key === 'Home' || event.key === 'End') {
     event.preventDefault();
     activateLayer(event.key === 'Home' ? state.layers[0] : state.layers.at(-1));
+    return;
+  }
+  if (event.key === 'n' || event.key === 'N') {
+    // Shift walks back through them, the way a "find next" does everywhere.
+    goToFinding(event.shiftKey ? -1 : 1);
     return;
   }
   if (event.key === '0') { resetZoom(); return; }
