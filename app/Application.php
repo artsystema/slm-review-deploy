@@ -293,7 +293,7 @@ final class Application
 
     private static function page(): string
     {
-        return <<<'HTML'
+        $html = <<<'HTML'
 <!doctype html>
 <html lang="en">
 <head>
@@ -301,7 +301,7 @@ final class Application
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <title>SLM Remote Review</title>
-  <link rel="stylesheet" href="assets/review.css">
+  <link rel="stylesheet" href="{{asset:review.css}}">
 </head>
 <body>
   <div class="app">
@@ -409,9 +409,42 @@ final class Application
       </section>
     </main>
   </div>
-  <script src="assets/review.js" type="module"></script>
+  <script src="{{asset:review.js}}" type="module"></script>
 </body>
 </html>
 HTML;
+
+        return strtr($html, [
+            '{{asset:review.css}}' => self::asset('review.css'),
+            '{{asset:review.js}}' => self::asset('review.js'),
+        ]);
+    }
+
+    /**
+     * A static asset URL that changes when the asset does.
+     *
+     * The deploy overwrites assets in place, so without this the URL a browser
+     * asks for after a deploy is byte-identical to the one it already holds.
+     * Nothing sets Cache-Control on them, which leaves the browser free to
+     * reuse its copy without revalidating -- so a fixed viewer goes on looking
+     * unfixed until someone thinks to hard-reload, and the deploy that fixed it
+     * looks like it failed. The mtime changes on every deploy and on nothing
+     * else, so it is the version.
+     *
+     * Resolved from the running script, never from __DIR__: the deploy puts the
+     * entry script and assets together in the web root while the application
+     * itself lives outside it. If the file cannot be found the URL is emitted
+     * bare, which is exactly what it was before.
+     */
+    private static function asset(string $file): string
+    {
+        $url = 'assets/' . $file;
+        $script = $_SERVER['SCRIPT_FILENAME'] ?? '';
+        if (!is_string($script) || $script === '') {
+            return $url;
+        }
+        $path = dirname($script) . '/assets/' . $file;
+        $stamp = is_file($path) ? filemtime($path) : false;
+        return $stamp === false ? $url : $url . '?v=' . $stamp;
     }
 }
