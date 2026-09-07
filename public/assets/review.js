@@ -259,9 +259,15 @@ function argonRunway() {
   return { hours: latest > 0 ? latest / ratePerHour : 0, ratePerHour, reason: null };
 }
 
+// The published thumbnail is not a view. It is a chip-sized, softened copy of
+// whatever the Analysis tab already shows, published so the filmstrip does not
+// decode a full evidence frame per layer -- and the chips reach it by their own
+// preview_url, never through here. Left in, it becomes the first channel in the
+// row (absent from mediaOrder, it sorts to -1) under its raw role name, and
+// offers a picture nobody should read a verdict off as though it were evidence.
 function layerMedia(layer) {
   const media = Array.isArray(layer.media)
-    ? layer.media.filter(item => item && typeof item.role === 'string' && typeof item.url === 'string')
+    ? layer.media.filter(item => item && typeof item.role === 'string' && typeof item.url === 'string' && item.role !== 'thumbnail')
     : [];
   if (media.length) {
     return [...media].sort((left, right) => mediaOrder.indexOf(left.role) - mediaOrder.indexOf(right.role));
