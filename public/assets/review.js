@@ -163,6 +163,18 @@ const mediaLabels = {
   underfill_texture: 'Texture',
   underfill_baseline: 'Baseline',
 };
+// Roles that are published but are not channels to look through.
+//
+// `thumbnail` is a chip-sized, softened copy of whatever Analysis already
+// shows, published so the filmstrip does not decode a full evidence frame per
+// layer; the chips reach it by their own preview_url, never through here.
+//
+// `renewal_unrenewed` is the renewal channel's own rendering, and the region it
+// draws is composited into the Analysis overlay already. What was NOT anywhere
+// else is the number it was measured against, so that moved to the sidebar --
+// see renewalFact(). Removing the tab without that would have taken renewal's
+// only measurement out of the remote review entirely.
+const HIDDEN_ROLES = new Set(['thumbnail', 'renewal_unrenewed']);
 const channelColors = ['#4fc3c8', '#e0a63a', '#b57af2', '#ef718a'];
 // How far a measured, quiet stretch is muted when its frames are not held
 // locally. Findings and unverdicted stretches are never muted; see
@@ -196,6 +208,30 @@ function selectedIndex() { const i = state.layers.findIndex(layer => layer.id ==
 function escaped(value) { const element = document.createElement('span'); element.textContent = String(value); return element.innerHTML; }
 function clamp(value, low, high) { return Math.min(high, Math.max(low, value)); }
 function numeric(value) { return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : 'unknown'; }
+/**
+ * Renewal's measurement, which has no other home in this viewer.
+ *
+ * The Analysis overlay draws renewal's region, but deliberately the
+ * unsuppressed one -- a picture of the layer rather than a restatement of the
+ * number. The counted figure and its confidence used to exist only burned into
+ * the renewal_unrenewed image, so dropping that channel would have taken them
+ * with it. They ride in the published metrics dict, which nothing else reads.
+ *
+ * A layer where renewal did not run is not a layer measured at zero, and says
+ * so: the channel failing to report is itself worth seeing.
+ */
+function renewalFact(layer) {
+  const metrics = layer?.analysis?.metrics;
+  if (!metrics || typeof metrics !== 'object') return 'not reported';
+  const fraction = metrics.renewal_before_after_unrenewed_frac;
+  if (typeof fraction !== 'number' || !Number.isFinite(fraction)) return 'not reported';
+  const confidence = metrics.renewal_before_after_confidence;
+  const suffix = typeof confidence === 'number' && Number.isFinite(confidence)
+    ? ` / conf ${confidence.toFixed(2)}`
+    : '';
+  return `${percent(fraction)}${suffix}`;
+}
+
 function percent(value) { return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : 'unknown'; }
 
 function shortStamp(value) {
@@ -259,15 +295,14 @@ function argonRunway() {
   return { hours: latest > 0 ? latest / ratePerHour : 0, ratePerHour, reason: null };
 }
 
-// The published thumbnail is not a view. It is a chip-sized, softened copy of
-// whatever the Analysis tab already shows, published so the filmstrip does not
-// decode a full evidence frame per layer -- and the chips reach it by their own
-// preview_url, never through here. Left in, it becomes the first channel in the
-// row (absent from mediaOrder, it sorts to -1) under its raw role name, and
-// offers a picture nobody should read a verdict off as though it were evidence.
+// The channels an operator may look through, which is not every role that was
+// published: see HIDDEN_ROLES. A role missing from mediaOrder sorts to -1 and
+// would lead the row, under its raw name for want of a label -- so anything
+// filtered here is filtered before it can do that, and before renderGrid()
+// counts it among "all views".
 function layerMedia(layer) {
   const media = Array.isArray(layer.media)
-    ? layer.media.filter(item => item && typeof item.role === 'string' && typeof item.url === 'string' && item.role !== 'thumbnail')
+    ? layer.media.filter(item => item && typeof item.role === 'string' && typeof item.url === 'string' && !HIDDEN_ROLES.has(item.role))
     : [];
   if (media.length) {
     return [...media].sort((left, right) => mediaOrder.indexOf(left.role) - mediaOrder.indexOf(right.role));
@@ -1229,6 +1264,7 @@ function renderSidebar() {
     ['State', pending(layer.analysis.state)],
     ['Deficit area', percent(layer.analysis.deficit_area_frac)],
     ['Confidence', pending(numeric(layer.analysis.confidence))],
+    ['Unrenewed', pending(renewalFact(layer))],
     ['Processor', pending(layer.run ? `${layer.run.processor} ${layer.run.processor_version}` : 'unknown')],
     ['Rules', pending(layer.run?.rules_version || 'unknown')],
     ['Profile', pending(layer.run?.profile_name || 'unknown')],
