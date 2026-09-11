@@ -21,6 +21,39 @@ import {
   windowAround,
   zoomWindow,
 } from './review-core.js';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js';
+
+const LANGUAGE_KEY = 'slm-review-language';
+const THEME_KEY = 'slm-review-theme';
+
+function readPreference(key) {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+
+function writePreference(key, value) {
+  try { window.localStorage.setItem(key, value); } catch { /* Storage can be unavailable. */ }
+}
+
+let language = normalizeLanguage(readPreference(LANGUAGE_KEY) || navigator.language);
+let theme = readPreference(THEME_KEY);
+if (theme !== 'light' && theme !== 'dark') {
+  theme = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+const t = (key, variables = {}) => translate(key, language, variables);
+
+function valueLabel(value) {
+  const raw = String(value ?? 'unknown');
+  const key = `value.${raw.toLowerCase()}`;
+  const translated = t(key);
+  return translated === key ? raw : translated;
+}
+
+function mediaLabel(role) {
+  const key = `role.${role}`;
+  const translated = t(key);
+  return translated === key ? role : translated;
+}
 
 const state = {
   sessions: [],
@@ -81,6 +114,8 @@ const stageGrid = el('stage-grid');
 const navigator_ = el('navigator');
 const navigatorCanvas = el('navigator-canvas');
 const navigatorWindow = el('navigator-window');
+const languageSelect = el('language-select');
+const themeToggle = el('theme-toggle');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
 const POLL_MIN_MS = 10000;
@@ -122,18 +157,15 @@ const RULER_FONT = '9px Consolas, "Courier New", monospace';
 // nothing at all over a live run would waste what the page does know.
 const ELAPSED_QUALIFIER = {
   print: '',
-  replay: ' replay',
-  mixed: ' mixed',
+  replay: 'time.replay_qualifier',
+  mixed: 'time.mixed_qualifier',
   unknown: '',
 };
 const ELAPSED_MEANING = {
-  print: 'Elapsed print time, since this session’s first layer',
-  replay: 'Time taken to replay these layers from disk — not the print’s own',
-  mixed: 'This session mixes live and replayed runs, so this is neither the '
-    + 'print’s elapsed time nor one replay’s',
-  unknown: 'Elapsed since this session’s first layer. The monitor that '
-    + 'published it did not say whether these layers were watched live or '
-    + 'replayed from disk',
+  print: 'time.print',
+  replay: 'time.replay',
+  mixed: 'time.mixed',
+  unknown: 'time.unknown_basis',
 };
 const SCRUB_HAPTIC_MS = 20;
 const SCRUB_HAPTIC_INTERVAL_MS = 40;
@@ -143,6 +175,7 @@ const SCRUB_HAPTIC_INTERVAL_MS = 40;
 const mediaOrder = [
   'raw_before',
   'raw_after',
+  'illumination_flattened',
   'diagnostic_overlay',
   'key_view',
   'underfill_residual',
@@ -152,17 +185,6 @@ const mediaOrder = [
   'underfill_baseline',
 ];
 const defaultRoles = ['diagnostic_overlay', 'key_view', 'raw_after', 'raw_before'];
-const mediaLabels = {
-  raw_before: 'Before',
-  raw_after: 'After',
-  diagnostic_overlay: 'Analysis',
-  key_view: 'Analysis',
-  renewal_unrenewed: 'Renewal',
-  underfill_mask: 'Deficit mask',
-  underfill_residual: 'Residual',
-  underfill_texture: 'Texture',
-  underfill_baseline: 'Baseline',
-};
 // Roles that are published but are not channels to look through.
 //
 // `thumbnail` is a chip-sized, softened copy of whatever Analysis already
@@ -196,6 +218,53 @@ function setNotice(message, error = false) {
   notice.classList.toggle('error', error);
 }
 
+function applyStaticTranslations() {
+  document.documentElement.lang = language;
+  document.title = t('page.title');
+  for (const node of document.querySelectorAll('[data-i18n]')) {
+    node.textContent = t(node.dataset.i18n);
+  }
+  for (const node of document.querySelectorAll('[data-i18n-aria]')) {
+    node.setAttribute('aria-label', t(node.dataset.i18nAria));
+  }
+  for (const node of document.querySelectorAll('[data-i18n-title]')) {
+    node.title = t(node.dataset.i18nTitle);
+  }
+}
+
+function setTheme(next, persist = true) {
+  theme = next === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  const action = theme === 'dark' ? 'theme.light' : 'theme.dark';
+  themeToggle.dataset.i18nAria = action;
+  themeToggle.setAttribute('aria-label', t(action));
+  themeToggle.querySelector('span').textContent = theme === 'dark' ? '☀' : '☾';
+  if (persist) writePreference(THEME_KEY, theme);
+  chartBases.clear();
+  if (state.layers.length) {
+    renderScrubber();
+    renderNavigator();
+    renderDefectChart();
+    renderArgonChart();
+  }
+}
+
+function setLanguage(next) {
+  language = normalizeLanguage(next);
+  writePreference(LANGUAGE_KEY, language);
+  languageSelect.value = language;
+  applyStaticTranslations();
+  setTheme(theme, false);
+  renderSessionOptions(true);
+  render();
+  if (state.layers.length) reportCounts();
+  else if (!state.sessions.length) setNotice(t('notice.empty'));
+}
+
+function cssColor(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 async function api(path) {
   const response = await fetch(`${basePath}${path}`, { headers: { Accept: 'application/json' } });
   const body = await response.json().catch(() => ({}));
@@ -207,7 +276,7 @@ function selected() { return state.layers.find(layer => layer.id === state.selec
 function selectedIndex() { const i = state.layers.findIndex(layer => layer.id === state.selectedId); return i < 0 ? state.layers.length - 1 : i; }
 function escaped(value) { const element = document.createElement('span'); element.textContent = String(value); return element.innerHTML; }
 function clamp(value, low, high) { return Math.min(high, Math.max(low, value)); }
-function numeric(value) { return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : 'unknown'; }
+function numeric(value) { return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : t('unknown'); }
 /**
  * Renewal's measurement, which has no other home in this viewer.
  *
@@ -222,9 +291,9 @@ function numeric(value) { return typeof value === 'number' && Number.isFinite(va
  */
 function renewalFact(layer) {
   const metrics = layer?.analysis?.metrics;
-  if (!metrics || typeof metrics !== 'object') return 'not reported';
+  if (!metrics || typeof metrics !== 'object') return t('renewal.not_reported');
   const fraction = metrics.renewal_before_after_unrenewed_frac;
-  if (typeof fraction !== 'number' || !Number.isFinite(fraction)) return 'not reported';
+  if (typeof fraction !== 'number' || !Number.isFinite(fraction)) return t('renewal.not_reported');
   const confidence = metrics.renewal_before_after_confidence;
   const suffix = typeof confidence === 'number' && Number.isFinite(confidence)
     ? ` / conf ${confidence.toFixed(2)}`
@@ -232,15 +301,15 @@ function renewalFact(layer) {
   return `${percent(fraction)}${suffix}`;
 }
 
-function percent(value) { return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : 'unknown'; }
+function percent(value) { return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : t('unknown'); }
 
 function shortStamp(value) {
   const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? 'time unknown' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(date.valueOf()) ? t('time.unknown') : date.toLocaleTimeString(localeFor(language), { hour: '2-digit', minute: '2-digit' });
 }
 
 function ageLabel(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 'age unknown';
+  if (typeof value !== 'number' || !Number.isFinite(value)) return t('age.unknown');
   if (value < 1000) return `${Math.round(value)} ms`;
   if (value < 60000) return `${(value / 1000).toFixed(1)} s`;
   return `${Math.round(value / 60000)} min`;
@@ -271,12 +340,12 @@ function argonRunway() {
   }
   const recent = points.slice(-RUNWAY_WINDOW);
   if (recent.length < RUNWAY_MIN_POINTS) {
-    return { hours: null, ratePerHour: null, reason: 'not enough committed layers with a combined reading' };
+    return { hours: null, ratePerHour: null, reason: 'argon.reason.points' };
   }
   const hoursOf = (ms) => (ms - recent[0].at) / 3_600_000;
   const spanHours = hoursOf(recent[recent.length - 1].at);
   if (spanHours < RUNWAY_MIN_HOURS) {
-    return { hours: null, ratePerHour: null, reason: 'not enough elapsed time to measure a rate' };
+    return { hours: null, ratePerHour: null, reason: 'argon.reason.time' };
   }
   const n = recent.length;
   let sx = 0, sy = 0, sxx = 0, sxy = 0;
@@ -285,11 +354,11 @@ function argonRunway() {
     sx += x; sy += point.value; sxx += x * x; sxy += x * point.value;
   }
   const denom = n * sxx - sx * sx;
-  if (denom === 0) return { hours: null, ratePerHour: null, reason: 'readings do not span any time' };
+  if (denom === 0) return { hours: null, ratePerHour: null, reason: 'argon.reason.span' };
   const slope = (n * sxy - sx * sy) / denom;
   const ratePerHour = -slope;
   if (ratePerHour <= 0) {
-    return { hours: null, ratePerHour, reason: 'argon steady over these layers' };
+    return { hours: null, ratePerHour, reason: 'argon.reason.steady' };
   }
   const latest = recent[recent.length - 1].value;
   return { hours: latest > 0 ? latest / ratePerHour : 0, ratePerHour, reason: null };
@@ -521,7 +590,10 @@ function setGrid(showing) {
   stage.classList.toggle('is-grid', showing);
   stageGrid.hidden = !showing;
   gridToggle.setAttribute('aria-pressed', String(showing));
-  gridToggle.title = showing ? 'Back to the single view' : 'Show every view at once';
+  const action = showing ? 'view.single' : 'view.grid';
+  gridToggle.dataset.i18nAria = action;
+  gridToggle.setAttribute('aria-label', t(action));
+  gridToggle.title = t(action);
   renderStage();
   writeHash();
 }
@@ -537,9 +609,9 @@ function renderGrid(layer) {
     const image = document.createElement('img');
     image.loading = 'lazy';
     image.src = item.url;
-    image.alt = `Layer ${layer.index} ${mediaLabels[item.role] || item.role}`;
+    image.alt = `${t('layer', { index: layer.index })} ${mediaLabel(item.role)}`;
     const label = document.createElement('span');
-    label.textContent = mediaLabels[item.role] || item.role;
+    label.textContent = mediaLabel(item.role);
     tile.append(image, label);
     // Tapping a tile is how you go from comparing to inspecting.
     tile.addEventListener('click', () => {
@@ -555,7 +627,10 @@ function setFill(filling) {
   state.fill = filling;
   stage.classList.toggle('is-filled', filling);
   fillToggle.setAttribute('aria-pressed', String(filling));
-  fillToggle.title = filling ? 'Fit the whole frame in the panel' : 'Crop the frame to fill the panel';
+  const action = filling ? 'view.fit' : 'view.fill';
+  fillToggle.dataset.i18nAria = action;
+  fillToggle.setAttribute('aria-label', t(action));
+  fillToggle.title = t(action);
 }
 
 // ---------- deep links ----------
@@ -632,7 +707,7 @@ function focusHashLayer(parameters) {
     activateLayer(layer, false);
     return true;
   }
-  setNotice(`Layer ${index} of run ${run} is not among the published layers for this session.`, true);
+  setNotice(t('notice.link_missing', { layer: index, run }), true);
   return false;
 }
 
@@ -654,7 +729,7 @@ async function applyHash() {
     // under a different number, the network may simply have blinked. Failing
     // here used to take the whole live loop down with it, because the poll was
     // scheduled after this step rather than independently of it.
-    setNotice(`Could not open that link: ${error.message}. Showing the latest instead.`, true);
+    setNotice(t('notice.link_error', { error: error.message }), true);
   } finally {
     applyingHash = false;
   }
@@ -666,23 +741,28 @@ async function applyHash() {
 async function loadSessions(preserve = false) {
   const payload = await api('/api/v1/sessions?limit=100');
   state.sessions = payload.sessions;
+  if (renderSessionOptions(preserve)) return;
+  await loadLayers();
+}
+
+function renderSessionOptions(preserve = false) {
   const previous = select.value;
   select.replaceChildren();
   if (!state.sessions.length) {
-    select.append(new Option('No committed sessions', ''));
-    setNotice('No committed bundles yet. The sync agent may be offline or its queue is empty.');
-    return;
+    select.append(new Option(t('session.empty'), ''));
+    setNotice(t('notice.empty'));
+    return true;
   }
   for (const session of state.sessions) {
     const value = JSON.stringify({ monitor: session.monitor_instance_id, session: session.session_local_id });
-    const title = session.session_name || 'Unassigned monitor stream';
-    select.append(new Option(`${title} / ${session.layer_count} layers`, value));
+    const title = session.session_name || t('session.unassigned');
+    select.append(new Option(`${title} / ${t('session.layers', { count: session.layer_count })}`, value));
   }
   if (preserve && [...select.options].some(option => option.value === previous)) {
     select.value = previous;
-    return;
+    return true;
   }
-  await loadLayers();
+  return false;
 }
 
 /** The chosen session, or null while the picker still holds its placeholder. */
@@ -837,7 +917,7 @@ async function ensureDetail(index) {
     renderSidebar();
     renderScrubber();
   } catch (error) {
-    setNotice(`Layer detail could not be loaded: ${error.message}.`, true);
+    setNotice(t('notice.detail_error', { error: error.message }), true);
   } finally {
     for (const id of wanted) state.detailPending.delete(id);
   }
@@ -875,17 +955,19 @@ function reportCounts(extra = '') {
   const { eligibleCount: completed, flaggedCount: flagged } = series();
   const unavailable = state.layers.length - completed;
   const behind = state.unseen && !state.follow
-    ? `  ${state.unseen} newer layer${state.unseen === 1 ? '' : 's'} arrived; press End or Live to catch up.`
+    ? t('notice.behind', {
+      count: state.unseen,
+      noun: t(state.unseen === 1 ? 'noun.layer' : 'noun.layers'),
+    })
     : '';
   // A build past the index cap is said out loud. Every figure on this page is
   // computed over the layers named here, so a timeline that is quietly missing
   // its start would make the defect rate and the argon runway quietly wrong.
   const capped = state.truncated
-    ? '  This build is longer than one index request carries; the figures cover the layers listed here only.'
+    ? t('notice.truncated')
     : '';
   setNotice(
-    `${state.layers.length} loaded / ${completed} completed / ${flagged} flagged / `
-    + `${unavailable} unavailable or uncertain.${behind}${capped}${extra}`,
+    `${t('notice.counts', { total: state.layers.length, completed, flagged, unavailable })}${behind}${capped}${extra}`,
     state.truncated,
   );
 }
@@ -937,17 +1019,17 @@ async function poll() {
     // A full page means the viewer is behind; drain it before idling again.
     schedulePoll(payload.more ? 250 : POLL_MIN_MS);
   } catch (error) {
-    setNotice(`Live update failed: ${error.message}. Retrying.`, true);
+    setNotice(t('notice.live_error', { error: error.message }), true);
     schedulePoll(Math.min(POLL_MAX_MS, Math.max(POLL_MIN_MS, state.pollDelay * 2)));
   }
 }
 
 function updateFollowLabel() {
   const label = state.follow
-    ? 'Live'
+    ? t('follow.live')
     : state.unseen
-      ? `${state.unseen} new`
-      : 'Paused';
+      ? t('follow.new', { count: state.unseen })
+      : t('follow.paused');
   followToggle.querySelector('.follow-text').textContent = label;
   followToggle.classList.toggle('has-backlog', !state.follow && state.unseen > 0);
 }
@@ -1056,8 +1138,8 @@ function updateTransport() {
   const backward = state.playing && state.playDirection < 0;
   playToggle.setAttribute('aria-pressed', String(forward));
   playBack.setAttribute('aria-pressed', String(backward));
-  playToggle.setAttribute('aria-label', forward ? 'Stop playing' : 'Play through the build');
-  playBack.setAttribute('aria-label', backward ? 'Stop playing' : 'Play backwards through the build');
+  playToggle.setAttribute('aria-label', t(forward ? 'timeline.stop' : 'timeline.play'));
+  playBack.setAttribute('aria-label', t(backward ? 'timeline.stop' : 'timeline.play_back'));
   // A control that does nothing when pressed reads as a broken one.
   const total = state.layers.length;
   const at = selectedIndex();
@@ -1145,7 +1227,7 @@ function renderSelector() {
     button.role = 'tab';
     button.className = item.role === shown ? 'selected' : '';
     button.setAttribute('aria-selected', String(item.role === shown));
-    button.textContent = mediaLabels[item.role] || item.role;
+    button.textContent = mediaLabel(item.role);
     button.dataset.role = item.role;
     button.addEventListener('click', () => {
       state.selectedMediaRole = item.role;
@@ -1168,8 +1250,8 @@ function renderStage() {
   if (!layer) {
     showImage(null);
     stageEmpty.hidden = false;
-    stageEmpty.textContent = 'No layer data.';
-    caption.textContent = 'No evidence selected.';
+    stageEmpty.textContent = t('evidence.none_data');
+    caption.textContent = t('evidence.none_selected');
     return;
   }
   const current = currentMedia(layer);
@@ -1184,10 +1266,10 @@ function renderStage() {
     if (preview) {
       stage.classList.remove('is-waiting');
       stageEmpty.hidden = true;
-      stageHint.textContent = `Layer ${layer.index}`;
-      stageImage.alt = `Layer ${layer.index} scrub preview`;
+      stageHint.textContent = t('layer', { index: layer.index });
+      stageImage.alt = t('evidence.preview_alt', { index: layer.index });
       showImage(preview);
-      caption.textContent = `Scrub preview / layer ${layer.index} / release to load the evidence`;
+      caption.textContent = t('evidence.preview_caption', { index: layer.index });
       return;
     }
     // Waiting for this layer's detail and having none published are different
@@ -1198,33 +1280,37 @@ function renderStage() {
       // the most disruptive way of saying it -- and it would not be the held
       // view anyway. The shimmer carries the message instead.
       stage.classList.add('is-waiting');
-      stageHint.textContent = `Layer ${layer.index}`;
+      stageHint.textContent = t('layer', { index: layer.index });
       stageEmpty.hidden = Boolean(stageImage.getAttribute('src'));
-      stageEmpty.textContent = 'Loading this layer’s evidence…';
-      caption.textContent = `Layer ${layer.index} · loading evidence`;
+      stageEmpty.textContent = t('evidence.loading');
+      caption.textContent = t('evidence.loading_caption', { index: layer.index });
       return;
     }
     stage.classList.remove('is-waiting');
     showImage(null);
     stageEmpty.hidden = false;
-    stageEmpty.textContent = 'No review image was published for this result.';
-    caption.textContent = 'Raw and diagnostic evidence unavailable.';
+    stageEmpty.textContent = t('evidence.none_published');
+    caption.textContent = t('evidence.none_raw');
     return;
   }
   stage.classList.remove('is-waiting');
   stageEmpty.hidden = true;
-  stageHint.textContent = `Layer ${layer.index}`;
+  stageHint.textContent = t('layer', { index: layer.index });
   if (state.grid) {
     renderGrid(layer);
     const views = layerMedia(layer).length;
-    caption.textContent = `All views / ${views} view${views === 1 ? '' : 's'} / layer ${layer.index}`;
+    caption.textContent = t('evidence.all_caption', {
+      count: views,
+      noun: t(views === 1 ? 'noun.view' : 'noun.views'),
+      index: layer.index,
+    });
     return;
   }
-  stageImage.alt = `Layer ${layer.index} ${mediaLabels[current.role] || current.role}`;
+  stageImage.alt = `${t('layer', { index: layer.index })} ${mediaLabel(current.role)}`;
   showImage(current.url);
   prefetchAround(selectedIndex());
-  const dimensions = current.width && current.height ? `${current.width} x ${current.height}` : 'dimensions unavailable';
-  caption.textContent = `${mediaLabels[current.role] || current.role} / ${dimensions}${current.stage ? ` / ${current.stage}` : ''}`;
+  const dimensions = current.width && current.height ? `${current.width} x ${current.height}` : t('dimensions.unknown');
+  caption.textContent = `${mediaLabel(current.role)} / ${dimensions}${current.stage ? ` / ${current.stage}` : ''}`;
 }
 
 function renderSidebar() {
@@ -1232,6 +1318,7 @@ function renderSidebar() {
   const layer = detailed(chosen);
   const waiting = Boolean(chosen) && !detailLoaded(chosen);
   const facts = el('layer-facts');
+  const summary = el('layer-summary');
   const title = el('layer-title');
   const argon = el('argon-state');
   const severityBadge = el('layer-severity');
@@ -1240,49 +1327,54 @@ function renderSidebar() {
   renderRunway();
   if (!layer) {
     facts.innerHTML = '';
-    title.textContent = 'No layer';
-    argon.textContent = 'Argon context unavailable.';
-    severityBadge.textContent = 'unknown';
+    summary.innerHTML = '';
+    title.textContent = t('selected.none');
+    argon.textContent = t('argon.unavailable');
+    severityBadge.textContent = t('unknown');
     severityBadge.className = 'severity-badge severity-unknown';
-    reason.textContent = 'Select a committed layer to inspect its result.';
+    reason.textContent = t('selected.prompt');
     combinedLabel.textContent = '--';
     return;
   }
-  title.textContent = `Layer ${layer.index}`;
-  severityBadge.textContent = layer.analysis.severity || 'unknown';
+  title.textContent = t('layer', { index: layer.index });
+  severityBadge.textContent = valueLabel(layer.analysis.severity);
   severityBadge.className = `severity-badge severity-${severityToken(layer.analysis.severity)}`;
   // The session index answers the verdict; the explanation and the provenance
   // come with the detail. Saying "unknown" for a field that is merely still in
   // flight would read as the monitor having failed to record it.
-  const pending = value => (waiting ? 'loading...' : value);
+  const pending = value => (waiting ? t('loading') : value);
   reason.textContent = waiting
-    ? 'Loading this layer’s analysis...'
-    : layer.analysis.reason || 'No processor explanation was published for this layer.';
-  const values = [
-    ['Captured', new Date(layer.captured_at).toLocaleString()],
-    ['Status', layer.analysis.status],
-    ['State', pending(layer.analysis.state)],
-    ['Deficit area', percent(layer.analysis.deficit_area_frac)],
-    ['Confidence', pending(numeric(layer.analysis.confidence))],
-    ['Unrenewed', pending(renewalFact(layer))],
-    ['Processor', pending(layer.run ? `${layer.run.processor} ${layer.run.processor_version}` : 'unknown')],
-    ['Rules', pending(layer.run?.rules_version || 'unknown')],
-    ['Profile', pending(layer.run?.profile_name || 'unknown')],
+    ? t('selected.reason_loading')
+    : layer.analysis.reason || t('selected.reason_missing');
+  const summaryValues = [
+    [t('fact.captured'), new Date(layer.captured_at).toLocaleString(localeFor(language))],
+    [t('fact.status'), valueLabel(layer.analysis.status)],
+    [t('fact.state'), pending(valueLabel(layer.analysis.state))],
+    [t('fact.deficit'), percent(layer.analysis.deficit_area_frac)],
+    [t('fact.confidence'), pending(numeric(layer.analysis.confidence))],
+    [t('fact.unrenewed'), pending(renewalFact(layer))],
+  ];
+  const technicalValues = [
+    [t('fact.processor'), pending(layer.run ? `${layer.run.processor} ${layer.run.processor_version}` : t('unknown'))],
+    [t('fact.rules'), pending(layer.run?.rules_version || t('unknown'))],
+    [t('fact.profile'), pending(layer.run?.profile_name || t('unknown'))],
     // Which build published this layer. Two monitors feeding the same reviewer
     // are otherwise indistinguishable, and a stale one shows up only as fewer
     // views than expected -- which reads as a fault in this page rather than in
     // the machine that sent the bundle.
-    ['Monitor build', pending(layer.monitor_software_version || 'unknown')],
+    [t('fact.monitor'), pending(layer.monitor_software_version || t('unknown'))],
   ];
-  facts.innerHTML = values.map(([key, value]) => `<dt>${escaped(key)}</dt><dd>${escaped(value ?? 'unknown')}</dd>`).join('');
+  const rows = values => values.map(([key, value]) => `<dt>${escaped(key)}</dt><dd>${escaped(value ?? t('unknown'))}</dd>`).join('');
+  summary.innerHTML = rows(summaryValues);
+  facts.innerHTML = rows(technicalValues);
   const channels = layer.argon_snapshot.channels || [];
   const combined = layer.argon_snapshot.combined || {};
   combinedLabel.textContent = combined.value == null
-    ? String(combined.state || 'unknown')
+    ? valueLabel(combined.state)
     : `${numeric(combined.value)} ${combined.units || ''}`;
   argon.replaceChildren();
   if (!channels.length) {
-    argon.textContent = 'No enabled channels were recorded with this layer.';
+    argon.textContent = t('argon.none');
     return;
   }
   for (const channel of channels) {
@@ -1292,10 +1384,10 @@ function renderSidebar() {
     const dot = document.createElement('span'); dot.className = 'channel-dot';
     const label = document.createElement('span');
     // The index knows the reading; how old it was arrives with the detail.
-    label.textContent = `Channel ${channel.channel} / ${waiting ? 'age loading...' : ageLabel(channel.age_ms)}`;
+    label.textContent = `${t('argon.channel', { channel: channel.channel })} / ${waiting ? t('argon.age_loading') : ageLabel(channel.age_ms)}`;
     const value = document.createElement('strong');
     const units = channel.units || combined.units || '';
-    value.textContent = channel.value == null ? channel.reading_status : `${numeric(channel.value)} ${units}`.trimEnd();
+    value.textContent = channel.value == null ? valueLabel(channel.reading_status) : `${numeric(channel.value)} ${units}`.trimEnd();
     row.append(dot, label, value);
     argon.append(row);
   }
@@ -1306,14 +1398,14 @@ function renderRunway() {
   if (!node) return;
   const { hours, ratePerHour, reason } = series().runway;
   if (hours == null) {
-    node.textContent = `Argon left: ${reason}.`;
+    node.textContent = t('argon.left', { reason: t(reason) });
     node.dataset.state = 'muted';
     return;
   }
   const units = series().units;
   node.dataset.state = 'ok';
   const left = hours < 10 ? hours.toFixed(1) : Math.round(hours);
-  node.textContent = `Argon left: ~${left} h at ${ratePerHour.toFixed(2)} ${units}/h`.trimEnd();
+  node.textContent = t('argon.runway', { hours: left, rate: ratePerHour.toFixed(2), units }).trimEnd();
 }
 
 // ---------- scrubber ----------
@@ -1365,7 +1457,7 @@ function renderScrubber() {
   for (let column = 0; column < columns.length; column += 1) {
     const { token, eligible: measured, quiet } = columns[column];
     context.globalAlpha = measured && quiet && !held[column] ? UNHELD_QUIET_ALPHA : 1;
-    context.fillStyle = measured ? (severityColors[token] || '#8b93a1') : '#333a47';
+    context.fillStyle = measured ? (severityColors[token] || cssColor('--text-dim')) : cssColor('--canvas-muted');
     const barHeight = quiet ? barArea * 0.42 : barArea;
     context.fillRect(
       column * columnWidth, gutter + (barArea - barHeight) / 2, barWidth, barHeight,
@@ -1388,14 +1480,14 @@ function renderScrubber() {
   context.textBaseline = 'top';
   for (const tick of elapsedTicks(series().elapsed, state.window, width, TICK_MIN_GAP_PX)) {
     const x = xOfIndex(tick.index, width);
-    context.fillStyle = 'rgb(255 255 255 / 34%)';
+    context.fillStyle = cssColor('--canvas-ruler-soft');
     context.fillRect(x, gutter - RULER_TICK_PX, 1, RULER_TICK_PX);
-    context.fillStyle = 'rgb(255 255 255 / 7%)';
+    context.fillStyle = cssColor('--canvas-ruler-line');
     context.fillRect(x, gutter, 1, barArea);
     const label = formatElapsed(tick.elapsedMs);
     // Kept inside the strip at the right-hand end rather than clipped away.
     const room = width - x - 3;
-    context.fillStyle = 'rgb(255 255 255 / 42%)';
+    context.fillStyle = cssColor('--canvas-ruler');
     if (context.measureText(label).width <= room) {
       context.fillText(label, x + 3, 1);
     }
@@ -1412,9 +1504,9 @@ function renderScrubber() {
     : longPauses(visible, { width, minGapPx: PAUSE_MIN_GAP_PX });
   for (const pause of stops) {
     const x = xOfIndex(state.window.from + pause.index, width);
-    context.fillStyle = 'rgb(16 19 24 / 95%)';
+    context.fillStyle = cssColor('--canvas-pause');
     context.fillRect(x - 2, gutter, 4, barArea);
-    context.fillStyle = 'rgb(255 255 255 / 42%)';
+    context.fillStyle = cssColor('--canvas-ruler');
     context.fillRect(x - 2, gutter, 4, 1.5);
     context.fillRect(x - 2, gutter + barArea - 1.5, 4, 1.5);
   }
@@ -1472,21 +1564,22 @@ function positionPlayhead() {
   // which it is looking at.
   const elapsed = total ? series().elapsed[at] : null;
   const basis = total ? series().basis : 'unknown';
-  const qualifier = ELAPSED_QUALIFIER[basis] ?? '';
+  const qualifierKey = ELAPSED_QUALIFIER[basis] ?? '';
+  const qualifier = qualifierKey ? t(qualifierKey) : '';
   const since = elapsed == null ? '' : ` · ${formatElapsed(elapsed)}${qualifier}`;
   // Terse on purpose: six controls and this line share a phone's width, and the
   // controls are sized for a thumb rather than a cursor, so the line gives way.
   // `L` matches the scrub bubble, and the slider's aria-valuetext still spells
   // it out for anything reading the page aloud.
   timelineCount.textContent = total
-    ? `L${state.layers[at]?.index ?? '?'} · ${at + 1}/${total}${since}`
-    : 'no layers';
-  timelineCount.title = elapsed == null ? '' : ELAPSED_MEANING[basis];
+    ? `${t('layer.short', { index: state.layers[at]?.index ?? '?' })} · ${at + 1}/${total}${since}`
+    : t('timeline.none');
+  timelineCount.title = elapsed == null ? '' : t(ELAPSED_MEANING[basis]);
   scrubber.setAttribute('aria-valuenow', String(total ? at : 0));
   const current = selected();
   scrubber.setAttribute('aria-valuetext', current
-    ? `Layer ${current.index}, ${current.analysis.severity || 'unknown'}`
-    : 'No layers');
+    ? t('timeline.value', { index: current.index, severity: valueLabel(current.analysis.severity) })
+    : t('timeline.none_aria'));
   updateTransport();
   if (!total) { playhead.hidden = true; return; }
   const { from, count } = state.window;
@@ -1520,7 +1613,7 @@ function renderNavigator() {
   const columnWidth = width / columns.length;
   for (let column = 0; column < columns.length; column += 1) {
     const { token, eligible: measured, quiet } = columns[column];
-    context.fillStyle = measured ? (severityColors[token] || '#8b93a1') : '#333a47';
+    context.fillStyle = measured ? (severityColors[token] || cssColor('--text-dim')) : cssColor('--canvas-muted');
     const barHeight = quiet ? height * 0.4 : height;
     context.fillRect(column * columnWidth, (height - barHeight) / 2,
       Math.max(1, columnWidth), barHeight);
@@ -1600,9 +1693,9 @@ function showBubble(index, clientX) {
   const bounds = scrubber.getBoundingClientRect();
   bubble.hidden = false;
   const fine = scrubAnchor?.rung
-    ? ` · fine ${scrubAnchor.layersPerPx < 1 ? '1:1' : `${Math.round(scrubAnchor.layersPerPx)}/px`}`
+    ? ` · ${t('timeline.fine', { scale: scrubAnchor.layersPerPx < 1 ? '1:1' : `${Math.round(scrubAnchor.layersPerPx)}/px` })}`
     : '';
-  bubble.textContent = `L${layer.index} · ${shortStamp(layer.captured_at)}${fine}`;
+  bubble.textContent = `${t('layer.short', { index: layer.index })} · ${shortStamp(layer.captured_at)}${fine}`;
   bubble.dataset.severity = severityToken(layer.analysis.severity);
   const offset = clamp(clientX - bounds.left, 28, Math.max(28, bounds.width - 28));
   bubble.style.left = `${offset}px`;
@@ -1927,9 +2020,10 @@ function fillChip(chip, layer, position, pitch, total) {
   const preview = layer.preview_url ?? null;
   const image = chip.querySelector('img');
   const missing = chip.querySelector('.chip-missing');
+  missing.textContent = t('timeline.no_key_view');
   if (preview) {
     if (image.getAttribute('src') !== preview) image.src = preview;
-    image.alt = `Layer ${layer.index} evidence preview`;
+    image.alt = t('timeline.preview_alt', { index: layer.index });
     image.hidden = false;
     missing.hidden = true;
   } else {
@@ -1938,14 +2032,14 @@ function fillChip(chip, layer, position, pitch, total) {
     missing.hidden = false;
   }
   const deficit = typeof layer.analysis.deficit_area_frac === 'number'
-    ? `${percent(layer.analysis.deficit_area_frac)} deficit`
-    : layer.analysis.status;
+    ? t('fact.deficit_short', { value: percent(layer.analysis.deficit_area_frac) })
+    : valueLabel(layer.analysis.status);
   const [title, severityLabel] = chip.querySelectorAll('.chip-copy b, .severity-label');
-  title.textContent = `Layer ${layer.index}`;
-  severityLabel.textContent = layer.analysis.severity || 'unknown';
+  title.textContent = t('layer', { index: layer.index });
+  severityLabel.textContent = valueLabel(layer.analysis.severity);
   const [stamp, measure] = chip.querySelectorAll('.chip-meta span');
   stamp.textContent = shortStamp(layer.captured_at);
-  measure.textContent = deficit || 'unknown';
+  measure.textContent = deficit || t('unknown');
 }
 
 /** The chips on screen, plus the ones a scroll in flight is heading for. */
@@ -2197,7 +2291,7 @@ function drawChartSelection() {
 }
 
 function grid(context, width, height) {
-  context.strokeStyle = '#313846';
+  context.strokeStyle = cssColor('--canvas-grid');
   context.lineWidth = 1;
   for (let line = 1; line < 4; line += 1) {
     const y = 12 + ((height - 28) * line / 4);
@@ -2212,12 +2306,14 @@ function drawSelection(context, width, height) {
   const index = state.layers.findIndex(layer => layer.id === state.selectedId);
   if (index < 0 || state.layers.length < 2) return;
   const x = index * width / (state.layers.length - 1);
-  context.strokeStyle = 'rgba(77, 163, 255, .55)';
+  context.strokeStyle = cssColor('--accent');
+  context.globalAlpha = .55;
   context.lineWidth = 1;
   context.beginPath();
   context.moveTo(x, 5);
   context.lineTo(x, height - 8);
   context.stroke();
+  context.globalAlpha = 1;
 }
 
 function renderDefectChart() {
@@ -2227,8 +2323,10 @@ function renderDefectChart() {
   const { defect, windowSize, eligibleCount } = series();
   const last = defect.at(-1);
   el('defect-rate').textContent = last == null ? '--' : percent(last);
-  el('defect-note').textContent = `${eligibleCount}/${state.layers.length} completed eligible layers in this loaded range. Window: ${windowSize} layers.`;
-  drawLine(context, defect, width, height, '#4da3ff', value => 1 - value);
+  el('defect-note').textContent = t('quality.note', {
+    eligible: eligibleCount, total: state.layers.length, window: windowSize,
+  });
+  drawLine(context, defect, width, height, cssColor('--accent'), value => 1 - value);
   keepChartBase('#defect-chart', surface);
 }
 
@@ -2249,7 +2347,7 @@ function renderArgonChart() {
       if (value > high) high = value;
     }
   }
-  if (low === Infinity) { label.textContent = 'unknown'; keepChartBase('#argon-chart', surface); return; }
+  if (low === Infinity) { label.textContent = t('unknown'); keepChartBase('#argon-chart', surface); return; }
   const units = series().units;
   label.textContent = `${numeric(low)}-${numeric(high)} ${units}`.trim();
   for (const [channel, points] of byChannel) {
@@ -2258,7 +2356,7 @@ function renderArgonChart() {
     const dot = document.createElement('i');
     dot.className = 'channel-dot';
     dot.style.setProperty('--channel-color', color);
-    legendItem.append(dot, `CH ${channel}`);
+    legendItem.append(dot, t('argon_chart.channel', { channel }));
     legend.append(legendItem);
     drawLine(context, points, width, height, color, value => (high === low ? 0.5 : (high - value) / (high - low)), true);
   }
@@ -2325,6 +2423,8 @@ select.addEventListener('change', () => {
 followToggle.addEventListener('click', () => setFollow(!state.follow));
 fillToggle.addEventListener('click', () => setFill(!state.fill));
 gridToggle.addEventListener('click', () => setGrid(!state.grid));
+languageSelect.addEventListener('change', () => setLanguage(languageSelect.value));
+themeToggle.addEventListener('click', () => setTheme(theme === 'dark' ? 'light' : 'dark'));
 // A link pasted into the open tab should move the viewer, not reload it.
 window.addEventListener('hashchange', () => { applyHash().catch(error => setNotice(error.message, true)); });
 
@@ -2366,6 +2466,9 @@ window.addEventListener('keydown', event => {
   }
 });
 
+languageSelect.value = language;
+applyStaticTranslations();
+setTheme(theme, false);
 setFollow(true);
 setFill(false);
 setGrid(false);
@@ -2375,7 +2478,7 @@ applyTransform();
 // tick -- so nothing it does not depend on may prevent it starting.
 loadSessions()
   .then(applyHash)
-  .catch(error => setNotice(`Could not load remote review: ${error.message}`, true))
+  .catch(error => setNotice(t('notice.load_error', { error: error.message }), true))
   .finally(() => schedulePoll(POLL_MIN_MS));
 // New sessions appear without a reload too, just on a lazier clock than layers.
 window.setInterval(() => { if (!document.hidden) loadSessions(true).catch(() => {}); }, 60000);
