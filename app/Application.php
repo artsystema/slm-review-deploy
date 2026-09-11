@@ -295,58 +295,62 @@ final class Application
     {
         $html = <<<'HTML'
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>SLM Remote Review</title>
   <link rel="stylesheet" href="{{asset:review.css}}">
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">SLM</span><div><strong>Remote review</strong><small>Layer evidence</small></div></div>
-      <label class="session-picker"><span>Session</span><select id="session-select" aria-label="Review session"><option value="">Loading sessions...</option></select></label>
-      <button id="follow-toggle" class="follow-toggle" type="button" aria-pressed="true" title="Jump to each new layer as it arrives">
+      <div class="brand"><span class="brand-mark">SLM</span><div><strong data-i18n="brand.title">Remote review</strong><small data-i18n="brand.subtitle">Layer evidence</small></div></div>
+      <label class="session-picker"><span data-i18n="session.label">Session</span><select id="session-select" aria-label="Review session" data-i18n-aria="session.aria"><option value="" data-i18n="session.loading">Loading sessions...</option></select></label>
+      <div class="display-controls">
+        <label class="language-picker"><span class="sr-only" data-i18n="language.label">Language</span><select id="language-select" aria-label="Language" data-i18n-aria="language.label"><option value="en">EN</option><option value="uk">УКР</option></select></label>
+        <button id="theme-toggle" class="icon-toggle" type="button" aria-label="Use light theme" data-i18n-aria="theme.light"><span aria-hidden="true">&#9788;</span></button>
+      </div>
+      <button id="follow-toggle" class="follow-toggle" type="button" aria-pressed="true" title="Jump to each new layer as it arrives" data-i18n-title="follow.title">
         <span class="follow-dot"></span><span class="follow-text">Live</span>
       </button>
-      <span class="read-only-chip">read only</span>
+      <span class="read-only-chip" data-i18n="readonly">read only</span>
     </header>
     <main class="review-shell">
-      <section id="notice" class="notice" aria-live="polite">Loading committed sessions...</section>
-      <section class="selected-grid" aria-label="Selected layer">
+      <section id="notice" class="notice" aria-live="polite" data-i18n="notice.loading">Loading committed sessions...</section>
+      <section class="selected-grid" aria-label="Selected layer" data-i18n-aria="selected.aria">
         <article class="panel viewer-card">
-          <div id="evidence-selector" class="evidence-selector" role="tablist" aria-label="Layer evidence views"></div>
+          <div id="evidence-selector" class="evidence-selector" role="tablist" aria-label="Layer evidence views" data-i18n-aria="evidence.aria"></div>
           <div id="stage" class="stage">
             <div id="stage-viewport" class="stage-viewport">
               <img id="stage-image" class="stage-image" alt="" draggable="false">
             </div>
             <div id="stage-grid" class="stage-grid" role="list" hidden></div>
-            <p id="stage-empty" class="stage-empty">No frame selected.</p>
-            <div class="stage-controls" role="group" aria-label="View controls">
-              <button id="grid-toggle" class="grid-toggle" type="button" aria-pressed="false" aria-label="Show every view at once">
+            <p id="stage-empty" class="stage-empty" data-i18n="evidence.none_frame">No frame selected.</p>
+            <div class="stage-controls" role="group" aria-label="View controls" data-i18n-aria="view.controls">
+              <button id="grid-toggle" class="grid-toggle" type="button" aria-pressed="false" aria-label="Show every view at once" data-i18n-aria="view.grid">
                 <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
               </button>
-              <button id="fill-toggle" class="fill-toggle" type="button" aria-pressed="false" aria-label="Fill the panel">
+              <button id="fill-toggle" class="fill-toggle" type="button" aria-pressed="false" aria-label="Fill the panel" data-i18n-aria="view.fill">
                 <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M5 6.5h6M5 9.5h6"/></svg>
               </button>
               <span class="stage-controls-divider" aria-hidden="true"></span>
-              <button id="zoom-out" type="button" aria-label="Zoom out">&minus;</button>
-              <button id="zoom-reset" type="button" aria-label="Reset zoom">1&times;</button>
-              <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+              <button id="zoom-out" type="button" aria-label="Zoom out" data-i18n-aria="view.zoom_out">&minus;</button>
+              <button id="zoom-reset" type="button" aria-label="Reset zoom" data-i18n-aria="view.zoom_reset">1&times;</button>
+              <button id="zoom-in" type="button" aria-label="Zoom in" data-i18n-aria="view.zoom_in">+</button>
             </div>
             <div id="stage-hint" class="stage-hint" aria-hidden="true"></div>
           </div>
-          <p id="frame-caption" class="frame-caption">No evidence selected.</p>
+          <p id="frame-caption" class="frame-caption" data-i18n="evidence.none_selected">No evidence selected.</p>
           <div class="timeline">
-            <div id="scrubber" class="scrubber" role="slider" tabindex="0" aria-label="Layer timeline"
+            <div id="scrubber" class="scrubber" role="slider" tabindex="0" aria-label="Layer timeline" data-i18n-aria="timeline.aria"
                  aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="No layers">
               <canvas id="scrub-canvas" class="scrub-canvas" aria-hidden="true"></canvas>
               <div id="scrub-playhead" class="scrub-playhead" aria-hidden="true"></div>
               <div id="scrub-bubble" class="scrub-bubble" aria-hidden="true"></div>
             </div>
-            <div id="navigator" class="navigator" role="group" aria-label="Timeline zoom">
+            <div id="navigator" class="navigator" role="group" aria-label="Timeline zoom" data-i18n-aria="timeline.zoom">
               <canvas id="navigator-canvas" class="navigator-canvas" aria-hidden="true"></canvas>
               <div id="navigator-window" class="navigator-window" aria-hidden="true">
                 <span class="navigator-grip navigator-grip-start"></span>
@@ -354,36 +358,36 @@ final class Application
               </div>
             </div>
             <div class="timeline-foot">
-              <div class="transport" role="group" aria-label="Timeline transport">
-                <button id="finding-back" class="transport-button is-finding" type="button" aria-label="Previous flagged layer" title="Previous flagged layer (N)">
+              <div class="transport" role="group" aria-label="Timeline transport" data-i18n-aria="timeline.transport">
+                <button id="finding-back" class="transport-button is-finding" type="button" aria-label="Previous flagged layer" title="Previous flagged layer (N)" data-i18n-aria="timeline.previous_finding">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M9.8 3.4 5.2 8l4.6 4.6V3.4z"/>
                     <circle cx="12.1" cy="8" r="1.5"/>
                   </svg>
                 </button>
-                <button id="play-back" class="transport-button" type="button" aria-pressed="false" aria-label="Play backwards through the build">
+                <button id="play-back" class="transport-button" type="button" aria-pressed="false" aria-label="Play backwards through the build" data-i18n-aria="timeline.play_back">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path class="icon-play" d="M10.5 3.6 4 8l6.5 4.4z"/>
                     <path class="icon-pause" d="M5 3.5h2.2v9H5zm3.8 0H11v9H8.8z"/>
                   </svg>
                 </button>
-                <button id="step-back" class="transport-button" type="button" aria-label="Previous layer">
+                <button id="step-back" class="transport-button" type="button" aria-label="Previous layer" data-i18n-aria="timeline.previous">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M11 3.6 5.6 8 11 12.4zM5 3.5h1.6v9H5z"/>
                   </svg>
                 </button>
-                <button id="step-forward" class="transport-button" type="button" aria-label="Next layer">
+                <button id="step-forward" class="transport-button" type="button" aria-label="Next layer" data-i18n-aria="timeline.next">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M5 3.6 10.4 8 5 12.4zM9.4 3.5H11v9H9.4z"/>
                   </svg>
                 </button>
-                <button id="play-toggle" class="transport-button" type="button" aria-pressed="false" aria-label="Play through the build">
+                <button id="play-toggle" class="transport-button" type="button" aria-pressed="false" aria-label="Play through the build" data-i18n-aria="timeline.play">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path class="icon-play" d="M5.5 3.6 12 8l-6.5 4.4z"/>
                     <path class="icon-pause" d="M5 3.5h2.2v9H5zm3.8 0H11v9H8.8z"/>
                   </svg>
                 </button>
-                <button id="finding-forward" class="transport-button is-finding" type="button" aria-label="Next flagged layer" title="Next flagged layer (n)">
+                <button id="finding-forward" class="transport-button is-finding" type="button" aria-label="Next flagged layer" title="Next flagged layer (n)" data-i18n-aria="timeline.next_finding">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M6.2 3.4 10.8 8l-4.6 4.6V3.4z"/>
                     <circle cx="3.9" cy="8" r="1.5"/>
@@ -391,21 +395,22 @@ final class Application
                 </button>
               </div>
               <span id="timeline-count" class="timeline-count"></span>
-              <span class="keyboard-hint">Drag to scrub, away for fine &middot; arrows to step &middot; n for the next flagged layer</span>
+              <span class="keyboard-hint" data-i18n="timeline.hint">Drag to scrub, away for fine &middot; arrows to step &middot; n for the next flagged layer</span>
             </div>
-            <div id="filmstrip" class="filmstrip" role="listbox" aria-label="Layer filmstrip"></div>
+            <div id="filmstrip" class="filmstrip" role="listbox" aria-label="Layer filmstrip" data-i18n-aria="timeline.filmstrip"></div>
           </div>
         </article>
         <aside class="panel evidence-card">
-          <div class="selected-heading"><div><p class="eyebrow">SELECTED LAYER</p><h1 id="layer-title">No layer</h1></div><span id="layer-severity" class="severity-badge severity-unknown">unknown</span></div>
-          <p id="analysis-reason" class="analysis-reason">Select a committed layer to inspect its result.</p>
-          <dl id="layer-facts"></dl>
-          <section class="argon-panel"><div class="subheading"><span>Argon snapshot</span><strong id="argon-combined">--</strong></div><div id="argon-state" class="argon-state">Argon context unavailable.</div><div id="argon-runway" class="argon-runway" data-state="muted">Argon left: --</div></section>
+          <div class="selected-heading"><div><p class="eyebrow" data-i18n="selected.eyebrow">SELECTED LAYER</p><h1 id="layer-title" data-i18n="selected.none">No layer</h1></div><span id="layer-severity" class="severity-badge severity-unknown" data-i18n="unknown">unknown</span></div>
+          <p id="analysis-reason" class="analysis-reason" data-i18n="selected.prompt">Select a committed layer to inspect its result.</p>
+          <dl id="layer-summary"></dl>
+          <details id="metadata-details" class="metadata-details"><summary data-i18n="meta.summary">Technical details</summary><dl id="layer-facts"></dl></details>
+          <section class="argon-panel"><div class="subheading"><span data-i18n="argon.title">Argon snapshot</span><strong id="argon-combined">--</strong></div><div id="argon-state" class="argon-state" data-i18n="argon.unavailable">Argon context unavailable.</div><div id="argon-runway" class="argon-runway" data-state="muted">Argon left: --</div></section>
         </aside>
       </section>
       <section class="metrics-grid">
-        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow">ROLLING QUALITY</p><h2>Defect rate</h2></div><strong id="defect-rate">--</strong></div><canvas id="defect-chart" height="132" aria-label="Rolling defect rate chart"></canvas><p id="defect-note" class="chart-note"></p></article>
-        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow">CAPTURED WITH LAYER</p><h2>Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="132" aria-label="Argon snapshot chart"></canvas><p class="chart-note">Values are never interpolated. On a build longer than this chart is wide, each pixel column shows the highest and lowest reading in it, and becomes a gap only where the whole column was unreadable.</p></article>
+        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="quality.eyebrow">ROLLING QUALITY</p><h2 data-i18n="quality.title">Defect rate</h2></div><strong id="defect-rate">--</strong></div><canvas id="defect-chart" height="132" aria-label="Rolling defect rate chart" data-i18n-aria="quality.aria"></canvas><p id="defect-note" class="chart-note"></p></article>
+        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="argon_chart.eyebrow">CAPTURED WITH LAYER</p><h2 data-i18n="argon_chart.title">Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="132" aria-label="Argon snapshot chart" data-i18n-aria="argon_chart.aria"></canvas><p class="chart-note" data-i18n="argon_chart.note">Values are never interpolated. On a build longer than this chart is wide, each pixel column shows the highest and lowest reading in it, and becomes a gap only where the whole column was unreadable.</p></article>
       </section>
     </main>
   </div>

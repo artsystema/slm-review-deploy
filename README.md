@@ -119,6 +119,14 @@ back to, and one that was never published says so rather than showing a
 neighbour. History is replaced rather than pushed, so scrubbing a hundred layers
 does not bury the back button.
 
+The header also offers English/Ukrainian and light/dark display controls. Both
+preferences are stored only in that browser and are intentionally omitted from
+shared links. Changing language translates operator controls, state labels,
+dates, and generated summaries; processor-supplied reason text remains the
+verbatim evidence sent by the monitor. The selected layer keeps operational
+facts visible while processor, rules, profile, and monitor-build provenance is
+available under the collapsed **Technical details** section.
+
 ## Manual smoke procedure
 
 1. Visit `/` and confirm the browser requests the Directory Privacy password.
@@ -154,8 +162,11 @@ does not bury the back button.
      and must not fetch a build's worth of them.
        Supported touch devices provide a light tick as the selected layer changes;
        unsupported browsers and reduced-motion sessions remain silent.
-   - Switch among Before, After, Analysis and the detector views. The frame
-     must not change size or position between them.
+   - Switch among Before, After, Illumination flattened, Analysis and the
+     detector views. The frame must not change size or position between them.
+   - Switch between EN and УКР and between light and dark themes. Reload and
+     confirm both preferences persist. Expand and collapse Technical details;
+     the verdict, capture/status facts, and argon snapshot must remain visible.
    - Pinch or double-tap to zoom, drag to pan, and confirm the zoom is held
      when the layer or the view changes. `0` resets it.
    - Swipe left/right on an unzoomed image, and use Left/Right, Home/End and
@@ -337,8 +348,14 @@ remote-review/
 Media objects are stored outside the web root and are served only through the
 read API after the cPanel directory protection challenge. They are deduplicated
 by SHA-256. The original manifest JSON is retained together with normalized
-fields. The service accepts only the fixed raw-before, raw-after, diagnostic
-overlay, and legacy key-view roles declared by the bundle contract.
+fields. The service accepts only the fixed roles declared by the bundle
+contract, including raw-before, raw-after, diagnostic overlay,
+illumination-flattened, bounded detector stages, thumbnail, and legacy key-view.
+
+`illumination_flattened` is additive to the strict version-1 contract. Deploy
+the remote reviewer first, then the sync agent, and only then restart or upgrade
+a monitor whose default publication set includes it. An older agent or server
+rejects an unknown role by design so evidence is held rather than misread.
 
 Every frame the monitor sends already has a `<print name> | <capture time>`
 strip burned along its top, so a frame opened from a shared link still names its

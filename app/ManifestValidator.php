@@ -142,6 +142,7 @@ final class ManifestValidator
             'raw_before' => 'raw-before.jpg',
             'raw_after' => 'raw-after.jpg',
             'diagnostic_overlay' => 'diagnostic-overlay.jpg',
+            'illumination_flattened' => 'illumination-flattened.jpg',
             'renewal_unrenewed' => 'renewal-unrenewed.jpg',
             'underfill_mask' => 'underfill-mask.jpg',
             'underfill_residual' => 'underfill-residual.jpg',
