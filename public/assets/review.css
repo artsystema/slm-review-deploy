@@ -147,7 +147,6 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   letter-spacing: 0.08em;
 }
 
-.read-only-chip,
 .severity-badge {
   display: inline-flex;
   align-items: center;
@@ -1166,8 +1165,7 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
      their own; ordering puts them beside the brand, where there is room. */
   .brand { flex: 1 1 auto; min-width: 0; }
   .display-controls,
-  .follow-toggle,
-  .read-only-chip { order: 1; }
+  .follow-toggle { order: 1; }
   .session-picker { order: 2; width: 100%; margin-left: 0; }
   .session-picker select { width: 100%; min-width: 0; }
   .review-shell { padding: 8px 10px 18px; }
@@ -1197,6 +1195,5 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .evidence-selector button { min-width: 78px; }
   .filmstrip { --chip-width: 102px; }
   .follow-toggle { padding: 3px 8px; }
-  .read-only-chip { display: none; }
   .timeline-foot .keyboard-hint { display: none; }
 }

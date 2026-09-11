@@ -315,7 +315,6 @@ final class Application
       <button id="follow-toggle" class="follow-toggle" type="button" aria-pressed="true" title="Jump to each new layer as it arrives" data-i18n-title="follow.title">
         <span class="follow-dot"></span><span class="follow-text">Live</span>
       </button>
-      <span class="read-only-chip" data-i18n="readonly">read only</span>
     </header>
     <main class="review-shell">
       <section id="notice" class="notice" aria-live="polite" data-i18n="notice.loading">Loading committed sessions...</section>
