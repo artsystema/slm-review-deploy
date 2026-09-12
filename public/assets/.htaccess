@@ -1,0 +1,34 @@
+# Make the browser revalidate these files on every load.
+#
+# `Application.php` cache-busts the two files the HTML names, `review.css` and
+# `review.js`, by appending the file's mtime to their URL. It cannot do that for
+# the modules `review.js` imports: `./review-core.js` and `./review-i18n.js` are
+# written as static specifiers inside a file this app deliberately does not
+# build or bundle, so nothing rewrites them.
+#
+# The host sends no Cache-Control at all, only ETag and Last-Modified, which
+# leaves browsers to guess a freshness lifetime of roughly a tenth of the file's
+# age. A returning viewer then loads the NEW review.js against a STALE cached
+# review-core.js, and an ES module whose imports are missing does not degrade --
+# it fails to instantiate, taking the whole viewer with it. That is exactly what
+# a deploy adding new exports to review-core.js did on 2026-09-12: every API
+# still answered 200 and the page rendered nothing at all.
+#
+# `no-cache` does not mean "do not store"; it means "store, but revalidate
+# before reuse". With the ETags the host already sends, an unchanged asset costs
+# one conditional request and comes back 304 with no body, which is the right
+# price for never serving a half-updated module graph again.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# Heuristic expiry is the same trap by another name, so switch it off where
+# mod_expires is what is setting the lifetime.
+<IfModule mod_expires.c>
+  <FilesMatch "\.(js|css)$">
+    ExpiresActive On
+    ExpiresDefault "access plus 0 seconds"
+  </FilesMatch>
+</IfModule>
