@@ -33,6 +33,17 @@ final class ValidatedManifest
         public readonly int $runLocalId,
         /** "watch", "batch", or null from a monitor that predates the field. */
         public readonly ?string $runMode,
+        /**
+         * What the printer's job descriptor said this build would be. Null for
+         * a layer published by a monitor that predates these, or by one whose
+         * source had no descriptor to read. `jobLayersTotal` is the only way
+         * this service can know how much of a build it is holding: layers
+         * arrive one at a time and nothing else says what they count towards.
+         */
+        public readonly ?int $jobLayersTotal,
+        public readonly ?string $jobName,
+        public readonly ?string $jobMaterial,
+        public readonly ?float $jobLayerThicknessMm,
         public readonly int $analysisId,
         public readonly int $layerIndex,
         public readonly string $capturedAt,
@@ -80,7 +91,10 @@ final class ManifestValidator
             $run,
             ['local_id', 'processor', 'processor_version', 'rules_version', 'profile_name'],
             'run',
-            ['mode'],
+            // Optional so this service accepts manifests from monitors that do
+            // not send them yet -- which is every monitor until one is upgraded,
+            // and afterwards still every run whose source has no descriptor.
+            ['mode', 'job_layers_total', 'job_name', 'job_material', 'job_layer_thickness_mm'],
         );
         $runId = self::positiveInt($run['local_id'], 'run.local_id');
         foreach (['processor', 'processor_version', 'rules_version', 'profile_name'] as $field) {
@@ -96,6 +110,37 @@ final class ManifestValidator
             $runMode = self::string($run['mode'], 'run.mode', 20);
             if (!in_array($runMode, ['watch', 'batch'], true)) {
                 throw new HttpError(422, 'run.mode is unsupported');
+            }
+        }
+
+        // The job descriptor's account of the build these layers belong to.
+        // Absent rather than null when the monitor had nothing to report, so
+        // presence is the test and a present-but-wrong value is still refused.
+        $jobLayersTotal = null;
+        if (array_key_exists('job_layers_total', $run)) {
+            $jobLayersTotal = self::positiveInt($run['job_layers_total'], 'run.job_layers_total');
+            // A build of more than a million layers at this machine's 40 µm
+            // would stand 40 m tall. A number past that is a wrong field, not
+            // an ambitious print, and it would stretch every progress bar the
+            // reviewer draws from it.
+            if ($jobLayersTotal > 1000000) {
+                throw new HttpError(422, 'run.job_layers_total is out of range');
+            }
+        }
+        $jobName = array_key_exists('job_name', $run)
+            ? self::string($run['job_name'], 'run.job_name', 120)
+            : null;
+        $jobMaterial = array_key_exists('job_material', $run)
+            ? self::string($run['job_material'], 'run.job_material', 120)
+            : null;
+        $jobThickness = null;
+        if (array_key_exists('job_layer_thickness_mm', $run)) {
+            $jobThickness = self::finiteNumber(
+                $run['job_layer_thickness_mm'],
+                'run.job_layer_thickness_mm',
+            );
+            if ($jobThickness <= 0 || $jobThickness > 10) {
+                throw new HttpError(422, 'run.job_layer_thickness_mm is out of range');
             }
         }
 
@@ -191,7 +236,8 @@ final class ManifestValidator
 
         return new ValidatedManifest(
             $key, $monitorId, $monitorVersion, $sessionId, $sessionName, $sessionState, $runId,
-            $runMode, $analysisId, $layerIndex, $capturedAt, $status, $severity, $state,
+            $runMode, $jobLayersTotal, $jobName, $jobMaterial, $jobThickness,
+            $analysisId, $layerIndex, $capturedAt, $status, $severity, $state,
             $keyViewState, $media,
         );
     }

@@ -18,6 +18,9 @@ import {
   elapsedSeries,
   elapsedTicks,
   formatElapsed,
+  highestReceived,
+  layerNearestBuildFraction,
+  normalizeBuild,
   isWholeBuild,
   loadedColumns,
   longPauses,
@@ -606,5 +609,63 @@ describe('the timeline window', () => {
   it('copes with a session that has nothing in it', () => {
     assert.deepEqual(clampWindow(0, 100, 0), { from: 0, count: 0 });
     assert.equal(isWholeBuild({ from: 0, count: 0 }, 0), true);
+  });
+});
+
+describe('the build behind the layers', () => {
+  const layers = [
+    { id: 1, index: 10 },
+    { id: 2, index: 11 },
+    { id: 3, index: 40 },
+  ];
+
+  it('takes a usable total from the service and nothing else', () => {
+    assert.deepEqual(normalizeBuild({ layers_total: 3500, name: '0909', material: 'AlSi10Mg', layer_thickness_mm: 0.04 }), {
+      total: 3500,
+      name: '0909',
+      material: 'AlSi10Mg',
+      thickness: 0.04,
+    });
+  });
+
+  it('refuses a total it cannot divide by', () => {
+    // An older service sends no build at all; a broken one could send any of
+    // these. Each has to leave the rail hidden rather than become a denominator.
+    for (const raw of [null, undefined, {}, 'x', { layers_total: 0 }, { layers_total: -5 },
+                       { layers_total: 'many' }, { layers_total: Number.NaN }]) {
+      assert.equal(normalizeBuild(raw), null, JSON.stringify(raw ?? null));
+    }
+  });
+
+  it('keeps optional context out of the way when it is missing or wrong', () => {
+    const build = normalizeBuild({ layers_total: 12, layer_thickness_mm: 0 });
+    assert.deepEqual(build, { total: 12, name: '', material: '', thickness: null });
+  });
+
+  it('reports how far into the build it can see, not how much it holds', () => {
+    // Three layers held, but the build has reached its fortieth: the gap is
+    // upload lag, and conflating the two would draw the bar a third full.
+    assert.equal(highestReceived(layers), 40);
+    assert.equal(layers.length, 3);
+    assert.equal(highestReceived([]), 0);
+  });
+
+  it('lands a click on a layer that is actually here', () => {
+    // Half way along a 100-layer build is layer 50, which is not held. The
+    // nearest held layer is 40, not the first one after the gap.
+    assert.equal(layerNearestBuildFraction(layers, 100, 0.5).index, 40);
+    assert.equal(layerNearestBuildFraction(layers, 100, 0).index, 10);
+    assert.equal(layerNearestBuildFraction(layers, 100, 1).index, 40);
+  });
+
+  it('picks the closer side of a gap rather than always skipping forward', () => {
+    // Layer 12 is nearer 11 than 40; layer 38 is nearer 40 than 11.
+    assert.equal(layerNearestBuildFraction(layers, 100, 0.12).index, 11);
+    assert.equal(layerNearestBuildFraction(layers, 100, 0.38).index, 40);
+  });
+
+  it('has nothing to select when nothing is held or nothing is known', () => {
+    assert.equal(layerNearestBuildFraction([], 100, 0.5), null);
+    assert.equal(layerNearestBuildFraction(layers, 0, 0.5), null);
   });
 });
