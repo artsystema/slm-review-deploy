@@ -1,55 +1,67 @@
--- Remove one session's layers from the remote reviewer.
+-- Remove one session's layers from the remote reviewer, via phpMyAdmin.
 --
 -- There is no endpoint for this and there is not meant to be: the service is
 -- read-only by design, so deletion is a deliberate operator act run against the
--- database with the account that owns it, not something the site can be talked
--- into doing. Run it in phpMyAdmin as the database owner. The runtime user has
--- DELETE, but give it no reason to use it.
+-- database, not something the site can be talked into doing.
 --
--- Three things make the order below non-negotiable:
+-- HOW TO RUN
+--   cPanel -> Databases -> phpMyAdmin, pick the review database in the left
+--   sidebar, open the SQL tab, then paste and run ONE BLOCK BELOW AT A TIME.
+--   Read each result before moving on.
 --
---   1. `publication_media` references `publications` with ON DELETE RESTRICT,
---      so the media rows must go first or the publication delete simply fails.
---   2. Media is content-addressed and SHARED. Two layers photographing the same
---      unchanged bed store one `media_objects` row and one file on disk. Never
---      delete a session's files by listing its own hashes -- another session may
---      still reference them. Only rows no publication references at all are safe,
---      which is what the orphan query below asks for.
---   3. The files themselves live outside the database, under the private storage
---      directory, and SQL cannot remove them. Step 5 prints their paths for the
---      File Manager.
+--   Every block repeats the two SET lines on purpose. phpMyAdmin does not
+--   promise that user variables or an open transaction survive between separate
+--   Go clicks -- it may hand the next query a different connection -- so a block
+--   that relied on an earlier block's state could silently delete with @session
+--   unset. Each block below stands alone and commits on its own.
 --
--- Deletion is final. The sync agent keeps its own delivery ledger, and a
--- publication it has already committed is in a terminal state there -- it will
--- not notice the server forgot and will not send it again. Restoring a deleted
--- session means clearing that publication's ledger entry on the monitor host.
+-- WHAT MAKES THIS FIDDLIER THAN IT LOOKS
+--   * `publication_media` references `publications` with ON DELETE RESTRICT, so
+--     the media rows must go first or the publication delete simply fails.
+--   * Media is content-addressed and SHARED. Two layers photographing an
+--     unchanged bed keep one row and one file, so deleting a session's files by
+--     listing its own hashes would take images other sessions still display.
+--     Block 3 asks which media nothing references AT ALL, which is the only
+--     safe question.
+--   * The files live outside the database. SQL frees rows and leaves the bytes
+--     on disk; block 3 prints the paths for the File Manager.
 --
--- Run the steps ONE AT A TIME, not as one paste. Steps 3 and 4 exist so you can
--- read a number and decide, and phpMyAdmin executing the whole file in one go
--- takes that decision away -- it would commit before you saw the count. Each
--- step is separated below; select one, run it, read it, move on.
+-- DELETION IS FINAL. The sync agent's ledger puts a delivered publication in a
+-- terminal state, so it will not notice the server forgot and will not send it
+-- again. Getting a session back means clearing its ledger entry on the monitor
+-- host.
 
--- ---------------------------------------------------------------------------
--- Name the session. Both values come from the viewer's URL:
---   #m=<monitor_instance_id>&s=<session_local_id>
--- ---------------------------------------------------------------------------
+
+-- ===========================================================================
+-- BLOCK 1 -- PREVIEW. Changes nothing. Run this first and keep the layer count.
+-- ===========================================================================
+-- Both values come from the viewer's URL: #m=<monitor>&s=<session>.
+-- For the "unassigned" pseudo-session, use  SET @session := NULL;
 SET @monitor := 'f2c8ea59-a7ec-4b7b-8ce8-a24313ec6cd4';
 SET @session := 24;
 
--- Step 1. Look before you leap. Confirm this is the session you mean, and note
--- the layer count so you can check the deletion removed exactly that many.
 SELECT p.session_local_id,
-       MAX(p.session_name)   AS session_name,
-       COUNT(*)              AS layers,
-       MIN(p.captured_at)    AS first_layer,
-       MAX(p.captured_at)    AS last_layer
+       MAX(p.session_name) AS session_name,
+       COUNT(*)            AS layers_to_delete,
+       MIN(p.captured_at)  AS first_layer,
+       MAX(p.captured_at)  AS last_layer
   FROM publications p
  WHERE p.monitor_instance_id = @monitor
    AND p.session_local_id <=> @session
  GROUP BY p.session_local_id;
 
--- Step 2. Take everything out in one transaction, so a failure at the second
--- delete cannot leave the media rows gone and their publications behind.
+
+-- ===========================================================================
+-- BLOCK 2 -- DELETE. Run only once block 1 named the session you meant.
+-- Run the whole block in one Go: the transaction is what stops a failure on the
+-- second delete stranding media rows whose publications are already gone, and
+-- it only protects you if both deletes and the COMMIT arrive together.
+-- phpMyAdmin should report two result sets; the second count must equal
+-- `layers_to_delete` from block 1.
+-- ===========================================================================
+SET @monitor := 'f2c8ea59-a7ec-4b7b-8ce8-a24313ec6cd4';
+SET @session := 24;
+
 START TRANSACTION;
 
 DELETE pm
@@ -62,40 +74,38 @@ DELETE FROM publications
  WHERE monitor_instance_id = @monitor
    AND session_local_id <=> @session;
 
--- Step 3. The row count here must match the layer count from step 1. If it does
--- not, ROLLBACK instead and work out why before trying again.
-SELECT ROW_COUNT() AS publications_deleted;
-
--- Step 4. Commit once you are satisfied. ROLLBACK is still available until you do.
 COMMIT;
 
--- Step 5. List the media that nothing references any more. This is deliberately
--- a global question rather than a per-session one, because a file is only
--- unreachable once the LAST publication using it is gone -- and it also sweeps
--- up orphans left by any earlier deletion.
---
--- Copy `storage_path` and delete those files under the private storage
--- directory, e.g. /home/CPANEL_USER/public_html/slm-review-storage/<storage_path>.
--- Delete the files FIRST, then run step 6, so a failure leaves rows pointing at
--- missing files (harmless, and re-listed next time) rather than files no row
--- names (invisible, and orphaned forever).
-SELECT mo.sha256,
-       mo.storage_path,
-       mo.size_bytes
-  FROM media_objects mo
-  LEFT JOIN publication_media pm ON pm.media_sha256 = mo.sha256
- WHERE pm.media_sha256 IS NULL
- ORDER BY mo.size_bytes DESC;
 
--- How much disk that frees. Kept as its own statement rather than a window
--- function, which MySQL 5.6 does not have and this host may still be running.
+-- ===========================================================================
+-- BLOCK 3 -- FIND THE FREED FILES. Changes nothing.
+-- Deliberately a global question, not a per-session one: a file is unreachable
+-- only once the LAST publication using it is gone. It also sweeps up orphans
+-- left by any earlier deletion.
+-- ===========================================================================
 SELECT COUNT(*) AS orphan_files,
        ROUND(SUM(mo.size_bytes) / 1048576, 1) AS mb_to_free
   FROM media_objects mo
   LEFT JOIN publication_media pm ON pm.media_sha256 = mo.sha256
  WHERE pm.media_sha256 IS NULL;
 
--- Step 6. Only after the files are gone from disk.
+SELECT mo.sha256, mo.storage_path, mo.size_bytes
+  FROM media_objects mo
+  LEFT JOIN publication_media pm ON pm.media_sha256 = mo.sha256
+ WHERE pm.media_sha256 IS NULL
+ ORDER BY mo.size_bytes DESC;
+
+-- Export that list (Export -> CSV) if it is long. Each `storage_path` is
+-- relative to the private storage directory, so the file to remove is
+--   /home/CPANEL_USER/public_html/slm-review-storage/<storage_path>
+-- Delete the FILES first, then run block 4. That order fails safe: rows naming
+-- a missing file are harmless and get re-listed next time, whereas a file no
+-- row names is invisible and orphaned for good.
+
+
+-- ===========================================================================
+-- BLOCK 4 -- FORGET THE FREED FILES. Run only after the files are gone.
+-- ===========================================================================
 DELETE mo
   FROM media_objects mo
   LEFT JOIN publication_media pm ON pm.media_sha256 = mo.sha256
