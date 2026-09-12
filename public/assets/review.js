@@ -23,8 +23,20 @@ import {
   visibleWindow,
   windowAround,
   zoomWindow,
-} from './review-core.js';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js';
+// The `?v=` on these two is a cache break, not a version number, and it is here
+// because the HTML cannot put one on them: it cache-busts `review.js` by mtime,
+// but the specifiers below live inside this file and nothing rewrites them.
+//
+// On 2026-09-12 a deploy added exports to review-core.js. Browsers holding a
+// heuristically-cached copy of the old one loaded the new review.js against it,
+// and an ES module with missing imports does not degrade -- it fails to
+// instantiate, so the viewer rendered nothing while every API answered 200.
+//
+// `assets/.htaccess` now makes these revalidate, which stops it recurring. This
+// token is what rescues the browsers that cached a copy before that existed.
+// Bump it only if that situation ever arises again.
+} from './review-core.js?v=20260912';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20260912';
 
 const LANGUAGE_KEY = 'slm-review-language';
 const THEME_KEY = 'slm-review-theme';
