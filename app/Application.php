@@ -95,6 +95,12 @@ final class Application
                 // shortened: a timeline missing its end is worse than a warning.
                 'truncated' => $index['truncated'],
                 'latest_id' => $this->review->latestPublicationId($monitorId, $sessionId, $unassigned),
+                // What the build is meant to be, so the viewer can say how
+                // much of it has arrived. Null until a monitor that reads
+                // the job descriptor has published into this session.
+                // Served here because the viewer already refetches this
+                // endpoint as layers land, which is when progress changes.
+                'build' => $this->review->buildFacts($monitorId, $sessionId, $unassigned),
             ]);
         }
         if ($method === 'GET' && $path === '/api/v1/layers') {
@@ -126,6 +132,11 @@ final class Application
                         ? $sinceId
                         : $layers[count($layers) - 1]['id'],
                     'more' => count($layers) === $limit,
+                    // Repeated on the poll so a session that was already open
+                    // when its first job-bearing layer landed picks the total
+                    // up, and so a build followed into a restarted run adopts
+                    // that run's descriptor. One indexed row; see buildFacts().
+                    'build' => $this->review->buildFacts($monitorId, $sessionId, $unassigned),
                 ]);
             }
             $layers = $this->review->layers(
@@ -342,6 +353,21 @@ final class Application
             <div id="stage-hint" class="stage-hint" aria-hidden="true"></div>
           </div>
           <p id="frame-caption" class="frame-caption" data-i18n="evidence.none_selected">No evidence selected.</p>
+          <!-- The whole build, not the layers this service happens to hold. The
+               scrubber below spans what has arrived; this spans what the job
+               says will exist, so the gap between the two IS the upload lag and
+               is meant to be visible. Hidden until a monitor publishes a job
+               total. -->
+          <div id="build-rail" class="build-rail" hidden>
+            <span id="build-rail-name" class="build-rail-name"></span>
+            <div id="build-rail-track" class="build-rail-track" role="slider" tabindex="0"
+                 aria-label="Build progress" data-i18n-aria="build.aria"
+                 aria-valuemin="1" aria-valuemax="1" aria-valuenow="1" aria-valuetext="">
+              <div id="build-rail-received" class="build-rail-received"></div>
+              <div id="build-rail-mark" class="build-rail-mark"></div>
+            </div>
+            <span id="build-rail-count" class="build-rail-count"></span>
+          </div>
           <div class="timeline">
             <div id="scrubber" class="scrubber" role="slider" tabindex="0" aria-label="Layer timeline" data-i18n-aria="timeline.aria"
                  aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="No layers">

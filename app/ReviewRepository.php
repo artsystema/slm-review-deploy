@@ -434,6 +434,53 @@ final class ReviewRepository
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id';
     }
 
+    /**
+     * What the printer's job descriptor said the build in view will be.
+     *
+     * This service holds layers, not builds: it learns a layer exists when the
+     * bundle lands, and until now had no idea whether the 2,150 it was holding
+     * were most of a build or a tenth of one. The monitor publishes the job's
+     * layer total with every bundle, so the newest run that carries one is the
+     * build's own account of itself.
+     *
+     * Read from the newest run rather than aggregated across the session: a
+     * build restarted into a fresh folder becomes a new run under the same job,
+     * and it is that run's descriptor that describes what is on the plate now.
+     * Rows published before the monitor sent this have NULL and are skipped, so
+     * one upgraded run supplies the total for a session that began without one.
+     *
+     * Returns null when no run in scope has a total, which is the signal to
+     * show the count-only presentation rather than a bar with no denominator.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function buildFacts(string $monitorId, ?int $sessionId, bool $unassigned): ?array
+    {
+        $sql = 'SELECT p.run_local_id, p.job_layers_total, p.job_name, p.job_material,
+                       p.job_layer_thickness_mm
+                FROM publications p
+                WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id
+                  AND p.job_layers_total IS NOT NULL'
+            . $this->scopeClause($unassigned)
+            . ' ORDER BY p.run_local_id DESC, p.id DESC LIMIT 1';
+        $statement = $this->database->prepare($sql);
+        $this->bindScope($statement, $monitorId, $sessionId, $unassigned);
+        $statement->execute();
+        $row = $statement->fetch();
+        if ($row === false) {
+            return null;
+        }
+        return [
+            'run_local_id' => (int) $row['run_local_id'],
+            'layers_total' => (int) $row['job_layers_total'],
+            'name' => $row['job_name'],
+            'material' => $row['job_material'],
+            'layer_thickness_mm' => $row['job_layer_thickness_mm'] === null
+                ? null
+                : (float) $row['job_layer_thickness_mm'],
+        ];
+    }
+
     private function scopeClause(bool $unassigned): string
     {
         return $unassigned ? ' AND p.session_local_id IS NULL' : ' AND p.session_local_id = :session_id';

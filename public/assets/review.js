@@ -7,10 +7,13 @@ import {
   elapsedTicks,
   eligible,
   formatElapsed,
+  highestReceived,
   isWholeBuild,
+  layerNearestBuildFraction,
   loadedColumns,
   longPauses,
   nextFinding,
+  normalizeBuild,
   isFlagged,
   scrollOffsetFor,
   scrubScale,
@@ -64,6 +67,10 @@ const state = {
   detail: new Map(),
   detailPending: new Set(),
   truncated: false,
+  // What the printer's job descriptor says this build will be, or null
+  // when no monitor publishing here has read one. It is the only thing
+  // that tells this service what its layers are counting towards.
+  build: null,
   latestId: 0,
   loading: false,
   follow: true,
@@ -102,6 +109,12 @@ const scrubCanvas = el('scrub-canvas');
 const playhead = el('scrub-playhead');
 const bubble = el('scrub-bubble');
 const timelineCount = el('timeline-count');
+const buildRail = el('build-rail');
+const buildRailName = el('build-rail-name');
+const buildRailTrack = el('build-rail-track');
+const buildRailReceived = el('build-rail-received');
+const buildRailMark = el('build-rail-mark');
+const buildRailCount = el('build-rail-count');
 const fillToggle = el('fill-toggle');
 const gridToggle = el('grid-toggle');
 const playToggle = el('play-toggle');
@@ -825,6 +838,7 @@ async function loadLayers() {
     resetZoom();
     mergeLayers(payload.layers);
     state.truncated = Boolean(payload.truncated);
+    state.build = normalizeBuild(payload.build);
     state.latestId = payload.latest_id || 0;
     state.follow = true;
     state.unseen = 0;
@@ -999,6 +1013,10 @@ async function poll() {
     // grows; one zoomed into a stretch is left where the operator put it.
     if (wasWhole) state.window = { from: 0, count: state.layers.length };
     state.latestId = Math.max(state.latestId, payload.latest_id || 0);
+    // The total can appear mid-session: a session opened before its first
+    // job-bearing layer landed has none until one does.
+    const build = normalizeBuild(payload.build);
+    if (build) state.build = build;
     if (added) {
       applyStageAspect();
       const last = state.layers.at(-1);
@@ -1068,6 +1086,7 @@ function renderSelection() {
 
 /** Everything above, plus the parts that change only when layers arrive. */
 function render() {
+  renderBuildRail();
   renderScrubber();
   renderNavigator();
   renderFilmstrip();
@@ -1581,12 +1600,133 @@ function positionPlayhead() {
     ? t('timeline.value', { index: current.index, severity: valueLabel(current.analysis.severity) })
     : t('timeline.none_aria'));
   updateTransport();
+  positionBuildMark();
   if (!total) { playhead.hidden = true; return; }
   const { from, count } = state.window;
   const within = (at - from + 0.5) / Math.max(1, count);
   playhead.hidden = within < 0 || within > 1;
   playhead.style.left = `${within * 100}%`;
 }
+
+// ---------- build rail ----------
+//
+// The scrubber spans the layers this service holds. This spans the layers the
+// job says will exist, so the distance between the two is the upload lag and
+// the gaps are layers genuinely not here. It is the only element on the page
+// that can be honest about what is missing, because it is the only one with a
+// denominator that did not come from the same rows it is drawing.
+
+function buildNumber(value) {
+  return Number(value).toLocaleString(localeFor(language));
+}
+
+function renderBuildRail() {
+  // Nothing to divide by, or nothing to place on it.
+  if (!state.build || !state.layers.length) { buildRail.hidden = true; return; }
+  buildRail.hidden = false;
+  const { total, name, material, thickness } = state.build;
+  const received = state.layers.length;
+  const top = highestReceived(state.layers);
+  const reached = clamp(top / total, 0, 1);
+  const percent = Math.round(reached * 100);
+
+  buildRailName.textContent = name ? t('build.name', { name }) : t('build.untitled');
+  // Material and layer height are context, not headline: they belong on hover
+  // rather than in a rail that has to stay one line on a phone.
+  const context = [material, thickness == null ? '' : `${Math.round(thickness * 1000)} µm`];
+  buildRailName.title = context.filter(Boolean).join(' · ');
+
+  buildRailReceived.style.width = `${reached * 100}%`;
+  buildRailCount.textContent = t('build.count', {
+    received: buildNumber(received),
+    total: buildNumber(total),
+  });
+  // Layers held versus layers the build will have. Those differ both while the
+  // print is still going and where a bundle has not arrived, so the count says
+  // how many are here and the tooltip says how many are not.
+  const behind = Math.max(0, total - received);
+  buildRailCount.dataset.complete = behind === 0 ? 'true' : 'false';
+  buildRailTrack.title = [
+    t('build.title', { received: buildNumber(received), total: buildNumber(total), percent }),
+    behind === 0 ? t('build.complete') : t('build.behind', { count: buildNumber(behind) }),
+  ].join(' ');
+  buildRailTrack.setAttribute('aria-valuemax', String(total));
+  positionBuildMark();
+}
+
+/** Where the selected layer sits in the whole build. */
+function positionBuildMark() {
+  if (!state.build) return;
+  const current = selected();
+  if (!current) { buildRailMark.hidden = true; return; }
+  buildRailMark.hidden = false;
+  buildRailMark.style.left = `${clamp(current.index / state.build.total, 0, 1) * 100}%`;
+  buildRailTrack.setAttribute('aria-valuenow', String(current.index));
+  buildRailTrack.setAttribute('aria-valuetext', t('build.count', {
+    received: buildNumber(current.index),
+    total: buildNumber(state.build.total),
+  }));
+}
+
+let railPointer = null;
+let railFrame = 0;
+let railTarget = 0;
+
+/** Jump to the held layer nearest a point in the build, at most once a frame. */
+function seekBuild(fraction) {
+  railTarget = fraction;
+  if (railFrame) return;
+  railFrame = requestAnimationFrame(() => {
+    railFrame = 0;
+    const layer = layerNearestBuildFraction(state.layers, state.build?.total ?? 0, railTarget);
+    if (layer) activateLayer(layer);
+  });
+}
+
+function railFraction(event) {
+  const rect = buildRailTrack.getBoundingClientRect();
+  if (!rect.width) return 0;
+  return clamp((event.clientX - rect.left) / rect.width, 0, 1);
+}
+
+buildRailTrack.addEventListener('pointerdown', event => {
+  if (!state.build || !state.layers.length) return;
+  railPointer = event.pointerId;
+  buildRailTrack.setPointerCapture(event.pointerId);
+  seekBuild(railFraction(event));
+  event.preventDefault();
+});
+
+buildRailTrack.addEventListener('pointermove', event => {
+  if (railPointer !== event.pointerId) return;
+  seekBuild(railFraction(event));
+});
+
+function releaseRail(event) {
+  if (railPointer !== event.pointerId) return;
+  railPointer = null;
+  if (buildRailTrack.hasPointerCapture(event.pointerId)) {
+    buildRailTrack.releasePointerCapture(event.pointerId);
+  }
+}
+
+buildRailTrack.addEventListener('pointerup', releaseRail);
+buildRailTrack.addEventListener('pointercancel', releaseRail);
+
+// The rail is a slider, so it answers the keys a slider answers. Stepping moves
+// between layers that are *here*, not between build positions: a step that
+// landed on a layer this service does not hold would select nothing.
+buildRailTrack.addEventListener('keydown', event => {
+  if (!state.layers.length) return;
+  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+  if (step !== 0) {
+    activateLayer(state.layers[clamp(selectedIndex() + step, 0, state.layers.length - 1)]);
+    event.preventDefault();
+    return;
+  }
+  if (event.key === 'Home') { activateLayer(state.layers[0]); event.preventDefault(); }
+  if (event.key === 'End') { activateLayer(state.layers.at(-1)); event.preventDefault(); }
+});
 
 /**
  * The whole build, always, with the strip's window drawn over it.

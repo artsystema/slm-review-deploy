@@ -527,3 +527,64 @@ export function windowAround(window, index, total, margin = 0.15) {
   }
   return clampWindow(index - window.count * (1 - margin), window.count, total);
 }
+
+
+// ---------- the build behind the layers ----------
+//
+// Every other figure on the page is derived from the layers this service holds,
+// so none of them can say what is missing. These three work against the job
+// descriptor's own layer total, published with each bundle, which is the only
+// number here that did not come from the rows being counted.
+
+/**
+ * The build facts from the API, or null when there is no usable total.
+ *
+ * Defensive about every field because this object crosses a version boundary:
+ * an older service sends no `build` at all, and a total that is absent, zero,
+ * negative or not a number has to leave the rail hidden rather than become a
+ * denominator.
+ */
+export function normalizeBuild(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const total = Number(raw.layers_total);
+  if (!Number.isFinite(total) || total < 1) return null;
+  const thickness = Number(raw.layer_thickness_mm);
+  return {
+    total: Math.round(total),
+    name: typeof raw.name === 'string' ? raw.name : '',
+    material: typeof raw.material === 'string' ? raw.material : '',
+    thickness: Number.isFinite(thickness) && thickness > 0 ? thickness : null,
+  };
+}
+
+/**
+ * The highest layer number held: how far into the build this service can see.
+ *
+ * Not the same as how many layers it holds. A build still printing is ahead of
+ * its uploads, and a bundle that failed its first attempt lands minutes later,
+ * so the count and the frontier disagree and each answers a different question.
+ */
+export function highestReceived(layers) {
+  let top = 0;
+  for (const layer of layers) if (layer.index > top) top = layer.index;
+  return top;
+}
+
+/**
+ * The held layer closest to a position in the whole build.
+ *
+ * The rail spans layers that may not exist here, so a click has to land on
+ * something real. Nearest rather than next: clicking into a gap should select
+ * whichever side of it is closer, not always skip forward past the gap.
+ */
+export function layerNearestBuildFraction(layers, total, fraction) {
+  if (!layers.length || !Number.isFinite(total) || total < 1) return null;
+  const target = fraction * total;
+  let best = layers[0];
+  let bestGap = Math.abs(best.index - target);
+  for (const layer of layers) {
+    const gap = Math.abs(layer.index - target);
+    if (gap < bestGap) { bestGap = gap; best = layer; }
+  }
+  return best;
+}
