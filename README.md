@@ -162,7 +162,7 @@ available under the collapsed **Technical details** section.
      and must not fetch a build's worth of them.
        Supported touch devices provide a light tick as the selected layer changes;
        unsupported browsers and reduced-motion sessions remain silent.
-   - Switch among Before, After, Illumination flattened, Analysis and the
+   - Switch among Before, After, Analysis and the
      detector views. The frame must not change size or position between them.
    - Switch between EN and УКР and between light and dark themes. Reload and
      confirm both preferences persist. Expand and collapse Technical details;
@@ -356,6 +356,10 @@ illumination-flattened, bounded detector stages, thumbnail, and legacy key-view.
 the remote reviewer first, then the sync agent, and only then restart or upgrade
 a monitor whose default publication set includes it. An older agent or server
 rejects an unknown role by design so evidence is held rather than misread.
+The viewer hides this historical role from its view selector; existing media
+remains stored. The session list displays the name and state from the newest
+committed publication, so a renamed active session appears under its new name
+after the next layer is uploaded.
 
 Every frame the monitor sends already has a `<print name> | <capture time>`
 strip burned along its top, so a frame opened from a shared link still names its

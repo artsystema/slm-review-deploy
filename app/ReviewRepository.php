@@ -25,15 +25,23 @@ final class ReviewRepository
     public function sessions(int $limit): array
     {
         $statement = $this->database->prepare(
-            'SELECT monitor_instance_id, session_local_id, MAX(session_name) AS session_name,
-                    MAX(session_state) AS session_state, MIN(captured_at) AS first_captured_at,
-                    MAX(captured_at) AS last_captured_at, COUNT(*) AS layer_count,
-                    MAX(id) AS latest_publication_id,
-                    SUM(CASE WHEN analysis_status = \'completed\' THEN 1 ELSE 0 END) AS completed_count
-             FROM publications
-             WHERE status = \'committed\'
-             GROUP BY monitor_instance_id, session_local_id
-             ORDER BY last_captured_at DESC
+            'SELECT grouped.monitor_instance_id, grouped.session_local_id,
+                    latest.session_name, latest.session_state,
+                    grouped.first_captured_at, grouped.last_captured_at,
+                    grouped.layer_count, grouped.latest_publication_id, grouped.completed_count
+             FROM (
+                 SELECT monitor_instance_id, session_local_id,
+                        MIN(captured_at) AS first_captured_at,
+                        MAX(captured_at) AS last_captured_at,
+                        COUNT(*) AS layer_count,
+                        MAX(id) AS latest_publication_id,
+                        SUM(CASE WHEN analysis_status = \'completed\' THEN 1 ELSE 0 END) AS completed_count
+                 FROM publications
+                 WHERE status = \'committed\'
+                 GROUP BY monitor_instance_id, session_local_id
+             ) AS grouped
+             INNER JOIN publications AS latest ON latest.id = grouped.latest_publication_id
+             ORDER BY grouped.last_captured_at DESC
              LIMIT :limit'
         );
         $statement->bindValue('limit', $limit, PDO::PARAM_INT);

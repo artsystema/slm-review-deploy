@@ -200,7 +200,6 @@ const SCRUB_HAPTIC_INTERVAL_MS = 40;
 const mediaOrder = [
   'raw_before',
   'raw_after',
-  'illumination_flattened',
   'diagnostic_overlay',
   'key_view',
   'underfill_residual',
@@ -215,13 +214,15 @@ const defaultRoles = ['diagnostic_overlay', 'key_view', 'raw_after', 'raw_before
 // `thumbnail` is a chip-sized, softened copy of whatever Analysis already
 // shows, published so the filmstrip does not decode a full evidence frame per
 // layer; the chips reach it by their own preview_url, never through here.
+// `illumination_flattened` remains valid historical evidence but the operator
+// does not need a separate channel for it in the filmstrip/view selector.
 //
 // `renewal_unrenewed` is the renewal channel's own rendering, and the region it
 // draws is composited into the Analysis overlay already. What was NOT anywhere
 // else is the number it was measured against, so that moved to the sidebar --
 // see renewalFact(). Removing the tab without that would have taken renewal's
 // only measurement out of the remote review entirely.
-const HIDDEN_ROLES = new Set(['thumbnail', 'renewal_unrenewed']);
+const HIDDEN_ROLES = new Set(['thumbnail', 'illumination_flattened', 'renewal_unrenewed']);
 const channelColors = ['#4fc3c8', '#e0a63a', '#b57af2', '#ef718a'];
 // How far a measured, quiet stretch is muted when its frames are not held
 // locally. Findings and unverdicted stretches are never muted; see
