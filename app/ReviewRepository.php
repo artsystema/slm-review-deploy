@@ -25,15 +25,23 @@ final class ReviewRepository
     public function sessions(int $limit): array
     {
         $statement = $this->database->prepare(
-            'SELECT monitor_instance_id, session_local_id, MAX(session_name) AS session_name,
-                    MAX(session_state) AS session_state, MIN(captured_at) AS first_captured_at,
-                    MAX(captured_at) AS last_captured_at, COUNT(*) AS layer_count,
-                    MAX(id) AS latest_publication_id,
-                    SUM(CASE WHEN analysis_status = \'completed\' THEN 1 ELSE 0 END) AS completed_count
-             FROM publications
-             WHERE status = \'committed\'
-             GROUP BY monitor_instance_id, session_local_id
-             ORDER BY last_captured_at DESC
+            'SELECT grouped.monitor_instance_id, grouped.session_local_id,
+                    latest.session_name, latest.session_state,
+                    grouped.first_captured_at, grouped.last_captured_at,
+                    grouped.layer_count, grouped.latest_publication_id, grouped.completed_count
+             FROM (
+                 SELECT monitor_instance_id, session_local_id,
+                        MIN(captured_at) AS first_captured_at,
+                        MAX(captured_at) AS last_captured_at,
+                        COUNT(*) AS layer_count,
+                        MAX(id) AS latest_publication_id,
+                        SUM(CASE WHEN analysis_status = \'completed\' THEN 1 ELSE 0 END) AS completed_count
+                 FROM publications
+                 WHERE status = \'committed\'
+                 GROUP BY monitor_instance_id, session_local_id
+             ) AS grouped
+             INNER JOIN publications AS latest ON latest.id = grouped.latest_publication_id
+             ORDER BY grouped.last_captured_at DESC
              LIMIT :limit'
         );
         $statement->bindValue('limit', $limit, PDO::PARAM_INT);
@@ -456,7 +464,8 @@ final class ReviewRepository
      */
     public function buildFacts(string $monitorId, ?int $sessionId, bool $unassigned): ?array
     {
-        $sql = 'SELECT p.run_local_id, p.job_layers_total, p.job_name, p.job_material,
+        $sql = 'SELECT p.run_local_id, p.layer_index, p.run_mode, p.manifest_json,
+                       p.job_layers_total, p.job_name, p.job_material,
                        p.job_layer_thickness_mm
                 FROM publications p
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id
@@ -470,6 +479,17 @@ final class ReviewRepository
         if ($row === false) {
             return null;
         }
+        $manifest = json_decode((string) $row['manifest_json'], true);
+        $metrics = is_array($manifest) ? ($manifest['analysis']['metrics'] ?? null) : null;
+        $seconds = is_array($metrics) ? ($metrics['job_eta_remaining_seconds'] ?? null) : null;
+        $sampleLayers = is_array($metrics) ? ($metrics['job_eta_sample_layers'] ?? null) : null;
+        // The manifest's generic numeric metrics field accepts older and newer
+        // monitors without a database migration. Refuse a malformed or
+        // implausibly large ETA instead of rendering it as a date promise.
+        $hasEta = $row['run_mode'] === 'watch'
+            && (is_int($seconds) || is_float($seconds)) && is_finite((float) $seconds)
+            && $seconds > 0 && $seconds <= 366 * 86400
+            && (is_int($sampleLayers) || is_float($sampleLayers)) && $sampleLayers >= 10;
         return [
             'run_local_id' => (int) $row['run_local_id'],
             'layers_total' => (int) $row['job_layers_total'],
@@ -478,6 +498,9 @@ final class ReviewRepository
             'layer_thickness_mm' => $row['job_layer_thickness_mm'] === null
                 ? null
                 : (float) $row['job_layer_thickness_mm'],
+            'eta_remaining_seconds' => $hasEta ? (float) $seconds : null,
+            'eta_layer_index' => $hasEta ? (int) $row['layer_index'] : null,
+            'eta_captured_at' => $hasEta ? ($manifest['layer']['captured_at'] ?? null) : null,
         ];
     }
 

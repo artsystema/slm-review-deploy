@@ -162,7 +162,7 @@ available under the collapsed **Technical details** section.
      and must not fetch a build's worth of them.
        Supported touch devices provide a light tick as the selected layer changes;
        unsupported browsers and reduced-motion sessions remain silent.
-   - Switch among Before, After, Illumination flattened, Analysis and the
+   - Switch among Before, After, Analysis and the
      detector views. The frame must not change size or position between them.
    - Switch between EN and УКР and between light and dark themes. Reload and
      confirm both preferences persist. Expand and collapse Technical details;
@@ -252,6 +252,16 @@ preserves `private/config.php`, frame data, `app-root.php`, and the public site
 `.htaccess`. It also denies direct web access to the private app and storage.
 
 ## Viewer at build scale
+
+The build rail can show an approximate **time remaining** once a live FTP
+watch has a job descriptor and at least ten consecutive printer layer stamps.
+The monitor sums the job file's future per-layer scan times, then adds the
+recent difference between printer elapsed time and planned scan time per
+layer. It publishes one numeric estimate with each new layer. The viewer uses
+the newest matching layer's estimate and hides it after 20 minutes without a
+new layer; old bundles and batch replays have no ETA. It is an operational
+forecast, not a printer completion guarantee. No database migration is needed:
+the estimate travels in the manifest's existing numeric analysis metrics.
 
 A session runs to thousands of layers, so the viewer is written against the
 pixels rather than the layers:
@@ -356,6 +366,10 @@ illumination-flattened, bounded detector stages, thumbnail, and legacy key-view.
 the remote reviewer first, then the sync agent, and only then restart or upgrade
 a monitor whose default publication set includes it. An older agent or server
 rejects an unknown role by design so evidence is held rather than misread.
+The viewer hides this historical role from its view selector; existing media
+remains stored. The session list displays the name and state from the newest
+committed publication, so a renamed active session appears under its new name
+after the next layer is uploaded.
 
 Every frame the monitor sends already has a `<print name> | <capture time>`
 strip burned along its top, so a frame opened from a shared link still names its

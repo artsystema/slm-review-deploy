@@ -18,6 +18,7 @@ import {
   elapsedSeries,
   elapsedTicks,
   formatElapsed,
+  formatBuildEta,
   highestReceived,
   layerNearestBuildFraction,
   normalizeBuild,
@@ -30,6 +31,7 @@ import {
   severityColumns,
   timeBasis,
   visibleWindow,
+  visibleBuildEta,
   windowAround,
   zoomWindow,
 } from '../public/assets/review-core.js';
@@ -640,6 +642,26 @@ describe('the build behind the layers', () => {
   it('keeps optional context out of the way when it is missing or wrong', () => {
     const build = normalizeBuild({ layers_total: 12, layer_thickness_mm: 0 });
     assert.deepEqual(build, { total: 12, name: '', material: '', thickness: null });
+  });
+
+  it('accepts a valid live ETA without treating old manifests as broken', () => {
+    const build = normalizeBuild({
+      layers_total: 2379, run_local_id: 4, eta_layer_index: 168,
+      eta_remaining_seconds: 222480, eta_captured_at: '2026-09-29T18:51:00+03:00',
+    });
+    assert.deepEqual(build.eta, {
+      seconds: 222480, layer: 168, run: 4,
+      capturedAt: Date.parse('2026-09-29T18:51:00+03:00'),
+    });
+    assert.equal(normalizeBuild({ layers_total: 2379 }).eta, undefined);
+    assert.equal(normalizeBuild({ layers_total: 2379, eta_remaining_seconds: Infinity }).eta, undefined);
+    assert.equal(formatBuildEta(222480), '2d 14h');
+    assert.equal(formatBuildEta(0), null);
+    const frontier = [{ run_local_id: 4, index: 168 }];
+    assert.equal(visibleBuildEta(build, frontier, build.eta.capturedAt + 60_000), build.eta);
+    assert.equal(visibleBuildEta(build, frontier, build.eta.capturedAt + 21 * 60_000), null);
+    assert.equal(visibleBuildEta(build, [{ run_local_id: 4, index: 169 }], build.eta.capturedAt), null);
+    assert.equal(visibleBuildEta(build, [{ run_local_id: 5, index: 168 }], build.eta.capturedAt), null);
   });
 
   it('reports how far into the build it can see, not how much it holds', () => {

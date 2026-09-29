@@ -367,6 +367,7 @@ final class Application
               <div id="build-rail-mark" class="build-rail-mark"></div>
             </div>
             <span id="build-rail-count" class="build-rail-count"></span>
+            <span id="build-rail-eta" class="build-rail-eta" hidden></span>
           </div>
           <div class="timeline">
             <div id="scrubber" class="scrubber" role="slider" tabindex="0" aria-label="Layer timeline" data-i18n-aria="timeline.aria"
