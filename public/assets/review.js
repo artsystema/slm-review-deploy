@@ -6,6 +6,7 @@ import {
   elapsedSeries,
   elapsedTicks,
   eligible,
+  formatBuildEta,
   formatElapsed,
   highestReceived,
   isWholeBuild,
@@ -21,6 +22,7 @@ import {
   severityToken,
   timeBasis,
   visibleWindow,
+  visibleBuildEta,
   windowAround,
   zoomWindow,
 // The `?v=` on these two is a cache break, not a version number, and it is here
@@ -35,8 +37,8 @@ import {
 // `assets/.htaccess` now makes these revalidate, which stops it recurring. This
 // token is what rescues the browsers that cached a copy before that existed.
 // Bump it only if that situation ever arises again.
-} from './review-core.js?v=20260912';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20260912';
+} from './review-core.js?v=20260929';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20260929';
 
 const LANGUAGE_KEY = 'slm-review-language';
 const THEME_KEY = 'slm-review-theme';
@@ -127,6 +129,7 @@ const buildRailTrack = el('build-rail-track');
 const buildRailReceived = el('build-rail-received');
 const buildRailMark = el('build-rail-mark');
 const buildRailCount = el('build-rail-count');
+const buildRailEta = el('build-rail-eta');
 const fillToggle = el('fill-toggle');
 const gridToggle = el('grid-toggle');
 const playToggle = el('play-toggle');
@@ -1043,6 +1046,9 @@ async function poll() {
         render();
       }
       updateFollowLabel();
+    } else {
+      // A live ETA expires while a printer is quiet, even without a new row.
+      renderBuildRail();
     }
     // Recovering from a failed poll has to clear the error text, not just its
     // styling, even on a tick that brought nothing new.
@@ -1635,7 +1641,11 @@ function buildNumber(value) {
 
 function renderBuildRail() {
   // Nothing to divide by, or nothing to place on it.
-  if (!state.build || !state.layers.length) { buildRail.hidden = true; return; }
+  if (!state.build || !state.layers.length) {
+    buildRail.hidden = true;
+    buildRailEta.hidden = true;
+    return;
+  }
   buildRail.hidden = false;
   const { total, name, material, thickness } = state.build;
   const received = state.layers.length;
@@ -1659,6 +1669,12 @@ function renderBuildRail() {
   // how many are here and the tooltip says how many are not.
   const behind = Math.max(0, total - received);
   buildRailCount.dataset.complete = behind === 0 ? 'true' : 'false';
+  const eta = visibleBuildEta(state.build, state.layers, Date.now());
+  buildRailEta.hidden = !eta;
+  if (eta) {
+    buildRailEta.textContent = t('build.eta', { time: formatBuildEta(eta.seconds) });
+    buildRailEta.title = t('build.eta_title', { layer: eta.layer });
+  }
   buildRailTrack.title = [
     t('build.title', { received: buildNumber(received), total: buildNumber(total), percent }),
     behind === 0 ? t('build.complete') : t('build.behind', { count: buildNumber(behind) }),

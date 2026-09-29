@@ -1276,6 +1276,16 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   flex: 0 0 auto;
 }
 
+.build-rail-eta {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.build-rail-eta[hidden] { display: none; }
+
 /* Every layer of the build is here; the rail has nothing left to wait for. */
 .build-rail-count[data-complete='true'] {
   color: var(--ok);

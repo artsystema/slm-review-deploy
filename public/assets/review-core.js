@@ -549,12 +549,44 @@ export function normalizeBuild(raw) {
   const total = Number(raw.layers_total);
   if (!Number.isFinite(total) || total < 1) return null;
   const thickness = Number(raw.layer_thickness_mm);
+  const seconds = raw.eta_remaining_seconds;
+  const layer = raw.eta_layer_index;
+  const run = raw.run_local_id;
+  const capturedAt = Date.parse(raw.eta_captured_at);
+  const eta = typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+    && Number.isSafeInteger(layer) && layer > 0
+    && Number.isSafeInteger(run) && run > 0
+    && Number.isFinite(capturedAt)
+    ? { seconds, layer, run, capturedAt }
+    : null;
   return {
     total: Math.round(total),
     name: typeof raw.name === 'string' ? raw.name : '',
     material: typeof raw.material === 'string' ? raw.material : '',
     thickness: Number.isFinite(thickness) && thickness > 0 ? thickness : null,
+    ...(eta ? { eta } : {}),
   };
+}
+
+export function formatBuildEta(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${days}d ${restHours}h` : `${days}d`;
+}
+
+/** A live estimate belongs only to the newest received layer and expires on silence. */
+export function visibleBuildEta(build, layers, nowMs) {
+  const eta = build?.eta;
+  const frontier = layers.at(-1);
+  if (!eta || !frontier || eta.layer >= build.total
+      || frontier.run_local_id !== eta.run || frontier.index !== eta.layer) return null;
+  const age = nowMs - eta.capturedAt;
+  return age >= -60_000 && age <= 20 * 60_000 ? eta : null;
 }
 
 /**
