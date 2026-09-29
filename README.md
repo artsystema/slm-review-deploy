@@ -253,6 +253,16 @@ preserves `private/config.php`, frame data, `app-root.php`, and the public site
 
 ## Viewer at build scale
 
+The build rail can show an approximate **time remaining** once a live FTP
+watch has a job descriptor and at least ten consecutive printer layer stamps.
+The monitor sums the job file's future per-layer scan times, then adds the
+recent difference between printer elapsed time and planned scan time per
+layer. It publishes one numeric estimate with each new layer. The viewer uses
+the newest matching layer's estimate and hides it after 20 minutes without a
+new layer; old bundles and batch replays have no ETA. It is an operational
+forecast, not a printer completion guarantee. No database migration is needed:
+the estimate travels in the manifest's existing numeric analysis metrics.
+
 A session runs to thousands of layers, so the viewer is written against the
 pixels rather than the layers:
 
