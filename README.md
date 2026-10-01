@@ -56,8 +56,9 @@ paths are examples only; substitute the cPanel account's actual home path.
 4. Import `migrations/001_initial.sql`, then `migrations/002_build_order.sql`,
    then `migrations/003_monitor_version.sql`, then
    `migrations/004_layer_summary.sql`, then `migrations/005_run_mode.sql`,
+   then `migrations/006_job_descriptor.sql`, then `migrations/007_session_ends.sql`,
    with phpMyAdmin into the new database.
-   All three later migrations are required when upgrading an existing install:
+   Later migrations are required when upgrading an existing install:
    002 adds the index behind the build-ordered timeline, 003 records which
    monitor build published each layer, backfilling history from the manifests
    already stored, and 004 adds the columns the session index is read from.
@@ -65,7 +66,9 @@ paths are examples only; substitute the cPanel account's actual home path.
    column that does not exist yet; without 004 it does the same, and the
    viewer's timeline request fails outright; 005 records whether each layer was
    watched live or replayed, which decides whether the viewer may call its
-   elapsed figures print time.
+   elapsed figures print time. 006 stores the job descriptor, and 007 stores
+   terminal session timestamps independently of immutable layer bundles. Import
+   007 before deploying reviewer code that queries it.
 
    **Deploy this service before the monitor that sends `run.mode`.** The
    validator accepts the field as optional, so a reviewer updated first is happy
@@ -126,6 +129,25 @@ dates, and generated summaries; processor-supplied reason text remains the
 verbatim evidence sent by the monitor. The selected layer keeps operational
 facts visible while processor, rules, profile, and monitor-build provenance is
 available under the collapsed **Technical details** section.
+
+## Session end delivery
+
+Stopping the unified recording ends its print session permanently. The sync
+agent reads that terminal state from the monitor's loopback session API and
+delivers it to `POST /api/v1/ingest/session-ends` with the same ingest token used
+for layer bundles. `session_ends` (migration 007) stores one immutable end time
+per monitor/session ID. Repeated delivery of the same time succeeds; a different
+time is rejected. The session list and layer-poll API prefer that terminal state
+over any older `active` value inside an immutable layer bundle, including a
+bundle uploaded after the stop. A viewer already open learns the change on its
+next poll; its follow control reads **Latest** for an ended print. It can still
+follow late evidence uploads without claiming that the printer is live.
+
+The reviewer can show an old `active` label until the sync agent runs and the
+end update succeeds. `review-sync --status` reports blocked end updates; after
+repair, `--requeue-blocked` retries them. Existing ended sessions in the
+agent's authorized scope are discovered after this upgrade, including sessions
+whose last layer was published before recording stopped.
 
 ## Manual smoke procedure
 

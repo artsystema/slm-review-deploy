@@ -11,6 +11,7 @@ final class Application
     private function __construct(
         private Config $config,
         private PublicationRepository $publications,
+        private SessionEndRepository $sessionEnds,
         private ReviewRepository $review,
         private MediaStore $mediaStore,
     ) {
@@ -25,6 +26,7 @@ final class Application
         $application = new self(
             $config,
             new PublicationRepository($database, $mediaStore),
+            new SessionEndRepository($database),
             new ReviewRepository($database),
             $mediaStore,
         );
@@ -47,6 +49,12 @@ final class Application
         }
         if ($method === 'GET' && $path === '/api/v1/health') {
             Response::json(200, ['status' => 'ok']);
+        }
+        if ($method === 'POST' && $path === '/api/v1/ingest/session-ends') {
+            $this->requireIngestToken($request);
+            $body = $request->jsonBody(1024);
+            $this->sessionEnds->record($body['value']);
+            Response::json(200, ['status' => 'ended']);
         }
         if ($method === 'POST' && $path === '/api/v1/ingest/publications') {
             $this->requireIngestToken($request);
@@ -95,6 +103,7 @@ final class Application
                 // shortened: a timeline missing its end is worse than a warning.
                 'truncated' => $index['truncated'],
                 'latest_id' => $this->review->latestPublicationId($monitorId, $sessionId, $unassigned),
+                'session' => $this->review->sessionState($monitorId, $sessionId, $unassigned),
                 // What the build is meant to be, so the viewer can say how
                 // much of it has arrived. Null until a monitor that reads
                 // the job descriptor has published into this session.
@@ -137,6 +146,7 @@ final class Application
                     // up, and so a build followed into a restarted run adopts
                     // that run's descriptor. One indexed row; see buildFacts().
                     'build' => $this->review->buildFacts($monitorId, $sessionId, $unassigned),
+                    'session' => $this->review->sessionState($monitorId, $sessionId, $unassigned),
                 ]);
             }
             $layers = $this->review->layers(
