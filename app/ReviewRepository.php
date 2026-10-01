@@ -26,7 +26,9 @@ final class ReviewRepository
     {
         $statement = $this->database->prepare(
             'SELECT grouped.monitor_instance_id, grouped.session_local_id,
-                    latest.session_name, latest.session_state,
+                    latest.session_name,
+                    CASE WHEN ended.ended_at IS NOT NULL THEN \'ended\' ELSE latest.session_state END AS session_state,
+                    ended.ended_at,
                     grouped.first_captured_at, grouped.last_captured_at,
                     grouped.layer_count, grouped.latest_publication_id, grouped.completed_count
              FROM (
@@ -41,12 +43,40 @@ final class ReviewRepository
                  GROUP BY monitor_instance_id, session_local_id
              ) AS grouped
              INNER JOIN publications AS latest ON latest.id = grouped.latest_publication_id
+             LEFT JOIN session_ends AS ended
+               ON ended.monitor_instance_id = grouped.monitor_instance_id
+              AND ended.session_local_id = grouped.session_local_id
              ORDER BY grouped.last_captured_at DESC
              LIMIT :limit'
         );
         $statement->bindValue('limit', $limit, PDO::PARAM_INT);
         $statement->execute();
         return $statement->fetchAll();
+    }
+
+    /** @return array{state: string, ended_at: string|null} */
+    public function sessionState(string $monitorId, ?int $sessionId, bool $unassigned): array
+    {
+        if ($unassigned || $sessionId === null) {
+            return ['state' => 'unassigned', 'ended_at' => null];
+        }
+        $statement = $this->database->prepare(
+            'SELECT ended_at FROM session_ends
+             WHERE monitor_instance_id = :monitor_id AND session_local_id = :session_id'
+        );
+        $statement->execute(['monitor_id' => $monitorId, 'session_id' => $sessionId]);
+        $endedAt = $statement->fetchColumn();
+        if (is_string($endedAt)) {
+            return ['state' => 'ended', 'ended_at' => $endedAt];
+        }
+        $statement = $this->database->prepare(
+            'SELECT session_state FROM publications WHERE status = \'committed\'
+             AND monitor_instance_id = :monitor_id AND session_local_id = :session_id
+             ORDER BY id DESC LIMIT 1'
+        );
+        $statement->execute(['monitor_id' => $monitorId, 'session_id' => $sessionId]);
+        $state = $statement->fetchColumn();
+        return ['state' => is_string($state) ? $state : 'unknown', 'ended_at' => null];
     }
 
     /**

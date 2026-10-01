@@ -18,6 +18,7 @@ import {
   elapsedSeries,
   elapsedTicks,
   formatElapsed,
+  followingLabelKey,
   formatBuildEta,
   highestReceived,
   layerNearestBuildFraction,
@@ -43,6 +44,12 @@ const layer = (overrides = {}) => ({
 
 const completed = severity => layer({ analysis: { status: 'completed', severity } });
 const pending = () => layer({ analysis: { status: 'pending', severity: 'none' } });
+
+it('labels an ended session as latest while still following late publications', () => {
+  assert.equal(followingLabelKey(true, 0, 'active'), 'follow.live');
+  assert.equal(followingLabelKey(true, 0, 'ended'), 'follow.latest');
+  assert.equal(followingLabelKey(false, 2, 'ended'), 'follow.new');
+});
 
 /** The shipped implementation, kept as the oracle the fast one must match. */
 function naiveDefectRates(layers, windowSize) {

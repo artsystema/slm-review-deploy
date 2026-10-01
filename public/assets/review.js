@@ -8,6 +8,7 @@ import {
   eligible,
   formatBuildEta,
   formatElapsed,
+  followingLabelKey,
   highestReceived,
   isWholeBuild,
   layerNearestBuildFraction,
@@ -36,9 +37,10 @@ import {
 //
 // `assets/.htaccess` now makes these revalidate, which stops it recurring. This
 // token is what rescues the browsers that cached a copy before that existed.
-// Bump it only if that situation ever arises again.
-} from './review-core.js?v=20260929';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20260929';
+// This update imports a new status helper and translation tokens, so both
+// module URLs change with it even in browsers holding an older cached copy.
+} from './review-core.js?v=20261001';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261001';
 
 const LANGUAGE_KEY = 'slm-review-language';
 const THEME_KEY = 'slm-review-theme';
@@ -85,6 +87,7 @@ const state = {
   // when no monitor publishing here has read one. It is the only thing
   // that tells this service what its layers are counting towards.
   build: null,
+  sessionStatus: null,
   latestId: 0,
   loading: false,
   follow: true,
@@ -785,7 +788,8 @@ function renderSessionOptions(preserve = false) {
   for (const session of state.sessions) {
     const value = JSON.stringify({ monitor: session.monitor_instance_id, session: session.session_local_id });
     const title = session.session_name || t('session.unassigned');
-    select.append(new Option(`${title} / ${t('session.layers', { count: session.layer_count })}`, value));
+    const status = session.session_state === 'ended' ? ` / ${t('session.ended')}` : '';
+    select.append(new Option(`${title} / ${t('session.layers', { count: session.layer_count })}${status}`, value));
   }
   if (preserve && [...select.options].some(option => option.value === previous)) {
     select.value = previous;
@@ -855,6 +859,8 @@ async function loadLayers() {
     mergeLayers(payload.layers);
     state.truncated = Boolean(payload.truncated);
     state.build = normalizeBuild(payload.build);
+    state.sessionStatus = null;
+    applySessionStatus(payload.session);
     state.latestId = payload.latest_id || 0;
     state.follow = true;
     state.unseen = 0;
@@ -938,6 +944,7 @@ async function ensureDetail(index) {
   for (const id of wanted) state.detailPending.add(id);
   try {
     const payload = await api(`/api/v1/layers?${parameters}`);
+    applySessionStatus(payload.session);
     for (const layer of payload.layers) rememberDetail(layer);
     applyStageAspect();
     // Only the parts that read detail; the layers did not change. The strip is
@@ -1020,6 +1027,7 @@ async function poll() {
     if (parameters === null) { schedulePoll(POLL_MIN_MS); return; }
     parameters.set('since_id', String(state.latestId));
     const payload = await api(`/api/v1/layers?${parameters}`);
+    applySessionStatus(payload.session);
     // The poll returns full rows, so a layer that arrives live is already
     // detailed: following a build never waits for a second request.
     for (const layer of payload.layers) rememberDetail(layer);
@@ -1062,13 +1070,29 @@ async function poll() {
 }
 
 function updateFollowLabel() {
-  const label = state.follow
-    ? t('follow.live')
-    : state.unseen
-      ? t('follow.new', { count: state.unseen })
-      : t('follow.paused');
+  const key = followingLabelKey(state.follow, state.unseen, state.sessionStatus?.state);
+  const label = t(key, { count: state.unseen });
   followToggle.querySelector('.follow-text').textContent = label;
   followToggle.classList.toggle('has-backlog', !state.follow && state.unseen > 0);
+}
+
+function applySessionStatus(session) {
+  if (!session || !['active', 'ended', 'unassigned'].includes(session.state)) return;
+  if (state.sessionStatus?.state === session.state
+      && state.sessionStatus?.ended_at === session.ended_at) return;
+  state.sessionStatus = session;
+  const selected = select.value;
+  for (const entry of state.sessions) {
+    const value = JSON.stringify({ monitor: entry.monitor_instance_id, session: entry.session_local_id });
+    if (value === selected) {
+      entry.session_state = session.state;
+      entry.ended_at = session.ended_at;
+      break;
+    }
+  }
+  renderSessionOptions(true);
+  updateFollowLabel();
+  renderBuildRail();
 }
 
 function setFollow(following) {
@@ -1669,7 +1693,8 @@ function renderBuildRail() {
   // how many are here and the tooltip says how many are not.
   const behind = Math.max(0, total - received);
   buildRailCount.dataset.complete = behind === 0 ? 'true' : 'false';
-  const eta = visibleBuildEta(state.build, state.layers, Date.now());
+  const eta = state.sessionStatus?.state === 'ended'
+    ? null : visibleBuildEta(state.build, state.layers, Date.now());
   buildRailEta.hidden = !eta;
   if (eta) {
     buildRailEta.textContent = t('build.eta', { time: formatBuildEta(eta.seconds) });

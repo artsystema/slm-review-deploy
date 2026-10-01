@@ -589,6 +589,12 @@ export function visibleBuildEta(build, layers, nowMs) {
   return age >= -60_000 && age <= 20 * 60_000 ? eta : null;
 }
 
+/** Following an ended print means newest published evidence, not a live printer. */
+export function followingLabelKey(following, unseen, sessionState) {
+  if (following) return sessionState === 'ended' ? 'follow.latest' : 'follow.live';
+  return unseen > 0 ? 'follow.new' : 'follow.paused';
+}
+
 /**
  * The highest layer number held: how far into the build this service can see.
  *
