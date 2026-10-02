@@ -43,6 +43,10 @@ final class Config
         if (!is_string($values['ingest_token']) || strlen($values['ingest_token']) < 32) {
             throw new RuntimeException('ingest_token must be a long random secret');
         }
+        if (array_key_exists('review_token', $values)
+            && (!is_string($values['review_token']) || strlen($values['review_token']) < 32)) {
+            throw new RuntimeException('review_token must be a long random secret');
+        }
         foreach (['max_manifest_bytes', 'max_media_bytes'] as $key) {
             if (!is_int($values[$key]) || $values[$key] <= 0) {
                 throw new RuntimeException("{$key} must be a positive integer");
@@ -80,6 +84,14 @@ final class Config
         /** @var string $token */
         $token = $this->values['ingest_token'];
         return $token;
+    }
+
+    public function reviewToken(): ?string
+    {
+        $value = $this->values['review_token'] ?? null;
+        // The documented example must leave writes disabled if copied before
+        // the operator replaces its public placeholder value.
+        return is_string($value) && !str_starts_with($value, 'replace-with-') ? $value : null;
     }
 
     public function maxManifestBytes(): int

@@ -21,9 +21,10 @@ from its own environment. The ingest endpoint additionally requires its own
 long random bearer token. Do not put either credential in JavaScript, source
 control, or the monitor's settings.
 
-The first release is read-only. It does not control the printer, change local
-analysis, acknowledge incidents, or treat remote availability as an operating
-signal.
+The layer viewer and ingest path keep the monitor's published result immutable.
+The separate `/review` page stores operator decisions in the remote database;
+it does not control the printer, change local analysis, acknowledge incidents,
+or treat remote availability as an operating signal.
 
 ## Requirements
 
@@ -57,6 +58,7 @@ paths are examples only; substitute the cPanel account's actual home path.
    then `migrations/003_monitor_version.sql`, then
    `migrations/004_layer_summary.sql`, then `migrations/005_run_mode.sql`,
    then `migrations/006_job_descriptor.sql`, then `migrations/007_session_ends.sql`,
+   then `migrations/008_layer_reviews.sql`,
    with phpMyAdmin into the new database.
    Later migrations are required when upgrading an existing install:
    002 adds the index behind the build-ordered timeline, 003 records which
@@ -68,7 +70,8 @@ paths are examples only; substitute the cPanel account's actual home path.
    watched live or replayed, which decides whether the viewer may call its
    elapsed figures print time. 006 stores the job descriptor, and 007 stores
    terminal session timestamps independently of immutable layer bundles. Import
-   007 before deploying reviewer code that queries it.
+   007 before deploying reviewer code that queries it. Import 008 before
+   deploying `/review`; the page needs its decision table even for reads.
 
    **Deploy this service before the monitor that sends `run.mode`.** The
    validator accepts the field as optional, so a reviewer updated first is happy
@@ -148,6 +151,51 @@ end update succeeds. `review-sync --status` reports blocked end updates; after
 repair, `--requeue-blocked` retries them. Existing ended sessions in the
 agent's authorized scope are discovered after this upgrade, including sessions
 whose last layer was published before recording stopped.
+
+## Layer decision queue
+
+After migration 008 and deployment, put a distinct random `review_token` of at
+least 32 characters in private `config.php`. Do not reuse the ingest token or
+send the review token in a link. Generate one on the server with
+`php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"` and keep it private. Open
+`https://slm.artsystema.com/review`, enter that token in the unlock form, and
+pass Directory Privacy if the site requires it. The token remains only in the
+page's memory and must be re-entered after a reload. The page selects the latest
+published session by default; `lmnlck` and `lmnst_2309` can be chosen from the
+session list when their bundles are present. You can filter awaiting review,
+CV flagged, all, approved, or rejected layers; search an exact layer number;
+and open before, after, and CV analysis images. A selected layer links back to
+the full viewer at that run and layer. Active sessions poll for newly published
+layers while the page is visible.
+
+**Approve CV** means the operator agrees with the recorded CV assessment of
+that layer. **Reject CV** means they disagree. Neither button changes CV,
+severity, incidents, alerts, or printer state. An optional observation can
+describe what was seen. The next unreviewed layer opens after a saved decision
+unless the checkbox is cleared. A later decision for the same publication is
+allowed and appears in decision history; the earlier event is never erased.
+
+Every review API request requires `X-SLM-Review-Authorization: Bearer <review_token>`;
+if the private config has no review token, these routes return HTTP 503 while
+the existing viewer and ingest routes continue working. `GET /api/v1/reviews`
+lists the current decision for each publication in one session, and
+`GET /api/v1/reviews/{publication_id}` lists up to 100 recent events for that
+committed layer. `POST /api/v1/reviews` also requires JSON and
+`X-SLM-Review-Action: 1`. A UUID v4 idempotency key
+deduplicates retries; `expected_review_id` rejects a stale page with HTTP 409.
+The cPanel Directory Privacy user is recorded when PHP receives it, otherwise
+the audit actor is `review-token-holder` and does not identify an individual.
+During a 2026-10-03 check from the monitor host, the existing session API
+answered without an HTTP login challenge. That may reflect an IP allowlist;
+verify the intended access policy separately. The new review API enforces its
+own token regardless.
+
+Back up the remote MySQL database with its media directory before applying
+008. Apply the migration with phpMyAdmin, add the review token to private
+`config.php`, then update and deploy the dedicated
+`slm-review-deploy` repository. Unlock `/review` and save
+one decision on a non-operational test publication before reviewing a print.
+The migration adds a table only and does not backfill or modify publications.
 
 ## Manual smoke procedure
 

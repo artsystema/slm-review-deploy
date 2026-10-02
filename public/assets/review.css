@@ -178,6 +178,8 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   letter-spacing: 0.08em;
 }
 
+.review-queue-link { color: var(--accent); font-size: 12px; font-weight: 700; white-space: nowrap; }
+
 .session-picker select {
   width: min(430px, 45vw);
   min-width: 220px;
