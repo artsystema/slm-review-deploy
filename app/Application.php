@@ -13,6 +13,7 @@ final class Application
         private PublicationRepository $publications,
         private SessionEndRepository $sessionEnds,
         private ReviewRepository $review,
+        private LayerReviewRepository $layerReviews,
         private MediaStore $mediaStore,
     ) {
     }
@@ -28,6 +29,7 @@ final class Application
             new PublicationRepository($database, $mediaStore),
             new SessionEndRepository($database),
             new ReviewRepository($database),
+            new LayerReviewRepository($database),
             $mediaStore,
         );
         try {
@@ -46,6 +48,9 @@ final class Application
         $path = $request->path();
         if ($method === 'GET' && $path === '/') {
             Response::html(self::page());
+        }
+        if ($method === 'GET' && $path === '/review') {
+            Response::html(self::reviewPage());
         }
         if ($method === 'GET' && $path === '/api/v1/health') {
             Response::json(200, ['status' => 'ok']);
@@ -83,6 +88,32 @@ final class Application
         }
         if ($method === 'GET' && $path === '/api/v1/sessions') {
             Response::json(200, ['sessions' => $this->review->sessions(self::limit($request, 50, 1, 100))]);
+        }
+        if ($method === 'GET' && $path === '/api/v1/reviews') {
+            $this->requireReviewToken($request);
+            $monitorId = self::monitorQuery($request);
+            $unassigned = $request->query('unassigned') === 'true';
+            $sessionId = $unassigned ? null : self::positiveQuery($request, 'session_id', true);
+            Response::json(200, ['reviews' => $this->layerReviews->currentForSession(
+                $monitorId, $sessionId, $unassigned
+            )]);
+        }
+        if ($method === 'GET' && preg_match('#^/api/v1/reviews/([1-9][0-9]*)$#D', $path, $matches) === 1) {
+            $this->requireReviewToken($request);
+            Response::json(200, ['reviews' => $this->layerReviews->history((int) $matches[1])]);
+        }
+        if ($method === 'POST' && $path === '/api/v1/reviews') {
+            // A custom header prevents cross-site forms from writing through
+            // ambient Directory Privacy Basic Auth. No CORS grant is sent.
+            if ($request->header('X-SLM-Review-Action') !== '1'
+                || $request->header('Sec-Fetch-Site') === 'cross-site') {
+                throw new HttpError(403, 'same-origin review action is required');
+            }
+            $this->requireReviewToken($request);
+            $body = $request->jsonBody(2048);
+            Response::json(201, ['review' => $this->layerReviews->record(
+                $body['value'], $request->reviewer()
+            )]);
         }
         if ($method === 'GET' && $path === '/api/v1/layers/index') {
             // The whole build's timeline, without the per-layer detail. See
@@ -190,6 +221,21 @@ final class Application
         $token = substr($authorization, 7);
         if (!hash_equals($this->config->ingestToken(), $token)) {
             throw new HttpError(403, 'ingest authorization is invalid');
+        }
+    }
+
+    private function requireReviewToken(Request $request): void
+    {
+        $configured = $this->config->reviewToken();
+        if ($configured === null) {
+            throw new HttpError(503, 'review decisions are not configured');
+        }
+        $authorization = $request->header('X-SLM-Review-Authorization');
+        if (!is_string($authorization) || !str_starts_with($authorization, 'Bearer ')) {
+            throw new HttpError(401, 'review authorization is required');
+        }
+        if (!hash_equals($configured, substr($authorization, 7))) {
+            throw new HttpError(403, 'review authorization is invalid');
         }
     }
 
@@ -329,6 +375,7 @@ final class Application
     <header class="topbar">
       <div class="brand"><span class="brand-mark">SLM</span><div><strong data-i18n="brand.title">Remote review</strong><small data-i18n="brand.subtitle">Layer evidence</small></div></div>
       <label class="session-picker"><span data-i18n="session.label">Session</span><select id="session-select" aria-label="Review session" data-i18n-aria="session.aria"><option value="" data-i18n="session.loading">Loading sessions...</option></select></label>
+      <a id="review-queue-link" class="review-queue-link" href="review" data-i18n="review.queue">Review decisions</a>
       <div class="display-controls">
         <label class="language-picker"><span class="sr-only" data-i18n="language.label">Language</span><select id="language-select" aria-label="Language" data-i18n-aria="language.label"><option value="en">EN</option><option value="uk">УКР</option></select></label>
         <button id="theme-toggle" class="icon-toggle" type="button" aria-label="Use light theme" data-i18n-aria="theme.light"><span aria-hidden="true">&#9788;</span></button>
@@ -458,6 +505,65 @@ HTML;
         return strtr($html, [
             '{{asset:review.css}}' => self::asset('review.css'),
             '{{asset:review.js}}' => self::asset('review.js'),
+        ]);
+    }
+
+    private static function reviewPage(): string
+    {
+        $html = <<<'HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layer decisions · SLM review</title>
+  <link rel="stylesheet" href="{{asset:review-queue.css}}">
+</head>
+<body>
+  <header class="queue-header">
+    <div><a class="back-link" href="./">← Remote review</a><h1>Layer decisions</h1><p>Compare published evidence with the recorded CV assessment.</p></div>
+    <div class="session-controls"><label>Session <select id="session-select" aria-label="Session"><option value="">Unlock to load</option></select></label><button id="refresh-button" type="button">Refresh</button><button id="lock-button" type="button" hidden>Lock</button></div>
+  </header>
+  <main class="queue-layout">
+    <aside id="queue-panel" class="queue-panel" hidden>
+      <div class="queue-controls">
+        <label>Show <select id="filter-select"><option value="pending">Awaiting review</option><option value="flagged">CV flagged</option><option value="all">All layers</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select></label>
+        <label>Layer <input id="layer-search" type="number" min="0" step="1" inputmode="numeric" placeholder="Any"></label>
+      </div>
+      <p id="queue-count" class="queue-count" aria-live="polite"></p>
+      <div id="layer-list" class="layer-list" role="list" aria-label="Published layers"></div>
+      <button id="show-more" class="show-more" type="button" hidden>Show more layers</button>
+    </aside>
+    <section class="decision-panel" aria-label="Selected layer decision">
+      <form id="unlock-form" class="unlock-form">
+        <h2>Unlock layer decisions</h2>
+        <p>Enter the private review token. It stays in this browser tab's memory and is never added to a link.</p>
+        <div><label>Review token <input id="review-token" type="password" autocomplete="off" required></label><button type="submit">Unlock</button></div>
+      </form>
+      <div id="notice" class="notice" role="status" aria-live="polite">Loading latest session…</div>
+      <div class="decision-heading"><div><p class="eyebrow">PUBLISHED EVIDENCE</p><h2 id="layer-title">Select a layer</h2><p id="layer-time" class="muted"></p></div><span id="cv-severity" class="severity">—</span></div>
+      <p id="cv-reason" class="cv-reason">Choose a layer from the list.</p>
+      <p id="cv-meta" class="muted"></p>
+      <div id="image-grid" class="image-grid" aria-label="Before, after, and analysis images"></div>
+      <div id="review-form" class="review-form" hidden>
+        <p class="review-context">Decision about the <strong>CV assessment</strong> of this layer. It does not change the monitor verdict or printer state.</p>
+        <p id="current-review" class="current-review">Awaiting review</p>
+        <label class="note-label">Optional observation <textarea id="review-note" maxlength="1000" rows="2" placeholder="What do you see? Where is it?"></textarea></label>
+        <div class="decision-actions"><button id="approve-button" class="approve" type="button">Approve CV</button><button id="reject-button" class="reject" type="button">Reject CV</button></div>
+        <label class="advance-label"><input id="advance-toggle" type="checkbox" checked> Open next unreviewed layer after saving</label>
+        <p id="save-status" class="save-status" role="status" aria-live="polite"></p>
+      </div>
+      <details id="history-details" hidden><summary>Decision history</summary><ol id="review-history"></ol></details>
+      <a id="viewer-link" class="viewer-link" href="./" hidden>Open this layer in full viewer ↗</a>
+    </section>
+  </main>
+  <script src="{{asset:review-queue.js}}" type="module"></script>
+</body>
+</html>
+HTML;
+        return strtr($html, [
+            '{{asset:review-queue.css}}' => self::asset('review-queue.css'),
+            '{{asset:review-queue.js}}' => self::asset('review-queue.js'),
         ]);
     }
 

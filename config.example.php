@@ -14,6 +14,9 @@ return [
     ],
     'storage_dir' => '/home/CPANEL_USER/slm-review-storage',
     'ingest_token' => 'replace-with-a-long-random-ingest-token',
+    // Separate browser-only secret for reading/writing operator decisions.
+    // Do not reuse the ingest token or put this value in the public web root.
+    'review_token' => 'replace-with-a-different-long-random-review-token',
     'max_manifest_bytes' => 262144,
     'max_media_bytes' => 5242880,
 ];

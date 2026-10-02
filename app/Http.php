@@ -70,6 +70,20 @@ final class Request
         return is_string($value) ? $value : null;
     }
 
+    public function reviewer(): string
+    {
+        // Directory Privacy may expose the authenticated user through either
+        // CGI variable. A missing variable is recorded honestly, without
+        // claiming to identify a particular person.
+        foreach (['REMOTE_USER', 'PHP_AUTH_USER'] as $key) {
+            $value = $this->server[$key] ?? null;
+            if (is_string($value) && preg_match('/^[\w.@-]{1,100}$/D', $value) === 1) {
+                return $value;
+            }
+        }
+        return 'review-token-holder';
+    }
+
     public function jsonBody(int $maximumBytes): array
     {
         $contentType = $this->header('Content-Type') ?? '';

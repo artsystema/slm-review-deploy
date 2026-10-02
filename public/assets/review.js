@@ -40,7 +40,7 @@ import {
 // This update imports a new status helper and translation tokens, so both
 // module URLs change with it even in browsers holding an older cached copy.
 } from './review-core.js?v=20261001';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261001';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261003';
 
 const LANGUAGE_KEY = 'slm-review-language';
 const THEME_KEY = 'slm-review-theme';
@@ -113,6 +113,7 @@ const view = { scale: 1, x: 0, y: 0 };
 
 const el = id => document.querySelector(`#${id}`);
 const select = el('session-select');
+const reviewQueueLink = el('review-queue-link');
 const notice = el('notice');
 const filmstrip = el('filmstrip');
 const followToggle = el('follow-toggle');
@@ -807,6 +808,21 @@ function currentSelection() {
     return null;
   }
 }
+
+reviewQueueLink?.addEventListener('click', () => {
+  const chosen = currentSelection();
+  if (!chosen) return;
+  const hash = new URLSearchParams({
+    m: chosen.monitor,
+    s: chosen.session === null ? 'unassigned' : String(chosen.session),
+  });
+  const layer = selected();
+  if (layer) {
+    hash.set('r', String(layer.run_local_id));
+    hash.set('l', String(layer.index));
+  }
+  reviewQueueLink.href = `review#${hash}`;
+});
 
 function sessionParameters(limit = '250') {
   const chosen = currentSelection();
