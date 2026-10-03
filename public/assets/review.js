@@ -41,7 +41,7 @@ import {
 // module URLs change with it even in browsers holding an older cached copy.
 } from './review-core.js?v=20261001';
 import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261003';
-import { createDecisionPanel } from './decision-panel.js?v=20261005';
+import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
 const LANGUAGE_KEY = 'slm-review-language';
 const THEME_KEY = 'slm-review-theme';
@@ -962,6 +962,7 @@ async function ensureDetail(index) {
     renderSelector();
     renderStage();
     renderSidebar();
+    decisionPanel.sync();
     renderScrubber();
   } catch (error) {
     setNotice(t('notice.detail_error', { error: error.message }), true);
