@@ -227,9 +227,6 @@ final class Application
     private function requireReviewToken(Request $request): void
     {
         $configured = $this->config->reviewToken();
-        if ($configured === null) {
-            throw new HttpError(503, 'review decisions are not configured');
-        }
         $authorization = $request->header('X-SLM-Review-Authorization');
         if (!is_string($authorization) || !str_starts_with($authorization, 'Bearer ')) {
             throw new HttpError(401, 'review authorization is required');

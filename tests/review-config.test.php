@@ -18,8 +18,13 @@ $values = [
 ];
 try {
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
-    if (Config::load($root)->reviewToken() !== null) {
-        throw new RuntimeException('old configuration unexpectedly enabled review writes');
+    $default = Config::load($root)->reviewToken();
+    $clientSource = file_get_contents(dirname(__DIR__) . '/public/assets/review-default-token.js');
+    if (!is_string($default) || preg_match('/^[0-9a-f]{64}$/D', $default) !== 1
+        || !is_string($clientSource)
+        || preg_match("/DEFAULT_REVIEW_TOKEN = '([0-9a-f]{64})'/", $clientSource, $matches) !== 1
+        || $matches[1] !== $default) {
+        throw new RuntimeException('server and browser review defaults differ');
     }
     $values['review_token'] = 'short';
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
@@ -33,8 +38,8 @@ try {
     }
     $values['review_token'] = 'replace-with-a-different-long-random-review-token';
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
-    if (Config::load($root)->reviewToken() !== null) {
-        throw new RuntimeException('example placeholder enabled review writes');
+    if (Config::load($root)->reviewToken() !== $default) {
+        throw new RuntimeException('example placeholder did not use the built-in review default');
     }
     $values['review_token'] = str_repeat('r', 64);
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');

@@ -154,15 +154,20 @@ whose last layer was published before recording stopped.
 
 ## Layer decision queue
 
-After migration 008 and deployment, put a distinct random `review_token` of at
-least 32 characters in private `config.php`. Do not reuse the ingest token or
-send the review token in a link. Generate one on the server with
-`php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"` and keep it private. Open
-`https://slm.artsystema.com/`, select a layer, expand **CV assessment review**
-below **Technical details**, and enter the token there. The token remains only
-in the page's memory and must be re-entered after a reload. The section is
-inactive when the selected layer has no completed CV assessment. The existing
-`/review` queue remains available for bulk review: it selects the latest
+After migration 008 and deployment, the reviewer uses a built-in token when
+private `config.php` omits `review_token` or retains its example placeholder.
+The same default is published in the browser assets and is loaded automatically;
+it is a convenience value, not an access control boundary. Anyone who can reach
+the site can read and record decisions under the shared `review-token-holder`
+identity. Restrict site access through cPanel Directory Privacy or a trusted IP
+allowlist if decisions must be limited to operators. A custom private
+`review_token` of at least 32 characters overrides the default, and the browser
+then asks for it. Do not reuse the ingest token.
+
+Open `https://slm.artsystema.com/`, select a layer, and expand **CV assessment
+review** below **Technical details**. The section is inactive when the selected
+layer has no completed CV assessment. The existing `/review` queue remains
+available for bulk review: it selects the latest
 published session by default; `lmnlck` and `lmnst_2309` can be chosen from the
 session list when their bundles are present. You can filter awaiting review,
 CV flagged, all, approved, or rejected layers; search an exact layer number;
@@ -179,9 +184,9 @@ A later decision for the same publication is
 allowed and appears in decision history; the earlier event is never erased.
 
 Every review API request requires `X-SLM-Review-Authorization: Bearer <review_token>`;
-if the private config has no review token, these routes return HTTP 503 while
-the existing viewer and ingest routes continue working. `GET /api/v1/reviews`
-lists the current decision for each publication in one session, and
+when private config has no custom review token, the public built-in default is
+accepted. `GET /api/v1/reviews` lists the current decision for each publication
+in one session, and
 `GET /api/v1/reviews/{publication_id}` lists up to 100 recent events for that
 committed layer. `POST /api/v1/reviews` also requires JSON and
 `X-SLM-Review-Action: 1`. A UUID v4 idempotency key
@@ -190,13 +195,12 @@ The cPanel Directory Privacy user is recorded when PHP receives it, otherwise
 the audit actor is `review-token-holder` and does not identify an individual.
 During a 2026-10-03 check from the monitor host, the existing session API
 answered without an HTTP login challenge. That may reflect an IP allowlist;
-verify the intended access policy separately. The new review API enforces its
-own token regardless.
+verify the intended access policy separately. With the published default, the
+review API's token check does not restrict anyone who can access the site.
 
 Back up the remote MySQL database with its media directory before applying
-008. Apply the migration with phpMyAdmin, add the review token to private
-`config.php`, then update and deploy the dedicated
-`slm-review-deploy` repository. Unlock the inline section and save
+008. Apply the migration with phpMyAdmin, then update and deploy the dedicated
+`slm-review-deploy` repository. Open the inline section and save
 one decision on a non-operational test publication before reviewing a print.
 The migration adds a table only and does not backfill or modify publications.
 
