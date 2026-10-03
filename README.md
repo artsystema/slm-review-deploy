@@ -22,7 +22,7 @@ long random bearer token. Do not put either credential in JavaScript, source
 control, or the monitor's settings.
 
 The layer viewer and ingest path keep the monitor's published result immutable.
-The separate `/review` page stores operator decisions in the remote database;
+The selected layer's CV assessment section in the main viewer stores operator decisions in the remote database;
 it does not control the printer, change local analysis, acknowledge incidents,
 or treat remote availability as an operating signal.
 
@@ -158,9 +158,11 @@ After migration 008 and deployment, put a distinct random `review_token` of at
 least 32 characters in private `config.php`. Do not reuse the ingest token or
 send the review token in a link. Generate one on the server with
 `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"` and keep it private. Open
-`https://slm.artsystema.com/review`, enter that token in the unlock form, and
-pass Directory Privacy if the site requires it. The token remains only in the
-page's memory and must be re-entered after a reload. The page selects the latest
+`https://slm.artsystema.com/`, select a layer, expand **CV assessment review**
+below **Technical details**, and enter the token there. The token remains only
+in the page's memory and must be re-entered after a reload. The section is
+inactive when the selected layer has no completed CV assessment. The existing
+`/review` queue remains available for bulk review: it selects the latest
 published session by default; `lmnlck` and `lmnst_2309` can be chosen from the
 session list when their bundles are present. You can filter awaiting review,
 CV flagged, all, approved, or rejected layers; search an exact layer number;
@@ -171,8 +173,9 @@ layers while the page is visible.
 **Approve CV** means the operator agrees with the recorded CV assessment of
 that layer. **Reject CV** means they disagree. Neither button changes CV,
 severity, incidents, alerts, or printer state. An optional observation can
-describe what was seen. The next unreviewed layer opens after a saved decision
-unless the checkbox is cleared. A later decision for the same publication is
+describe what was seen. The queue opens the next unreviewed layer after saving
+unless its checkbox is cleared; the main viewer stays on the selected layer.
+A later decision for the same publication is
 allowed and appears in decision history; the earlier event is never erased.
 
 Every review API request requires `X-SLM-Review-Authorization: Bearer <review_token>`;
@@ -193,7 +196,7 @@ own token regardless.
 Back up the remote MySQL database with its media directory before applying
 008. Apply the migration with phpMyAdmin, add the review token to private
 `config.php`, then update and deploy the dedicated
-`slm-review-deploy` repository. Unlock `/review` and save
+`slm-review-deploy` repository. Unlock the inline section and save
 one decision on a non-operational test publication before reviewing a print.
 The migration adds a table only and does not backfill or modify publications.
 
