@@ -41,6 +41,7 @@ import {
 // module URLs change with it even in browsers holding an older cached copy.
 } from './review-core.js?v=20261001';
 import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261003';
+import { createDecisionPanel } from './decision-panel.js?v=20261004';
 
 const LANGUAGE_KEY = 'slm-review-language';
 const THEME_KEY = 'slm-review-theme';
@@ -113,7 +114,6 @@ const view = { scale: 1, x: 0, y: 0 };
 
 const el = id => document.querySelector(`#${id}`);
 const select = el('session-select');
-const reviewQueueLink = el('review-queue-link');
 const notice = el('notice');
 const filmstrip = el('filmstrip');
 const followToggle = el('follow-toggle');
@@ -150,6 +150,14 @@ const languageSelect = el('language-select');
 const themeToggle = el('theme-toggle');
 
 const basePath = window.location.pathname.replace(/\/$/, '');
+const decisionPanel = createDecisionPanel({
+  basePath,
+  getLayer: () => selected(),
+  getDetail: () => state.detail.get(selected()?.id),
+  isMoving: () => moving(),
+  translate: (key, values) => t(key, values),
+  locale: () => localeFor(language),
+});
 const POLL_MIN_MS = 10000;
 const POLL_MAX_MS = 60000;
 const MAX_SCALE = 8;
@@ -287,6 +295,7 @@ function setLanguage(next) {
   writePreference(LANGUAGE_KEY, language);
   languageSelect.value = language;
   applyStaticTranslations();
+  decisionPanel.sync();
   setTheme(theme, false);
   renderSessionOptions(true);
   render();
@@ -809,21 +818,6 @@ function currentSelection() {
   }
 }
 
-reviewQueueLink?.addEventListener('click', () => {
-  const chosen = currentSelection();
-  if (!chosen) return;
-  const hash = new URLSearchParams({
-    m: chosen.monitor,
-    s: chosen.session === null ? 'unassigned' : String(chosen.session),
-  });
-  const layer = selected();
-  if (layer) {
-    hash.set('r', String(layer.run_local_id));
-    hash.set('l', String(layer.index));
-  }
-  reviewQueueLink.href = `review#${hash}`;
-});
-
 function sessionParameters(limit = '250') {
   const chosen = currentSelection();
   if (chosen === null) return null;
@@ -1138,6 +1132,7 @@ function renderSelection() {
   renderSelector();
   renderStage();
   renderSidebar();
+  decisionPanel.sync();
   markSelectedChip();
   positionPlayhead();
   drawChartSelection();

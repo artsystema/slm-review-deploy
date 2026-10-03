@@ -375,7 +375,6 @@ final class Application
     <header class="topbar">
       <div class="brand"><span class="brand-mark">SLM</span><div><strong data-i18n="brand.title">Remote review</strong><small data-i18n="brand.subtitle">Layer evidence</small></div></div>
       <label class="session-picker"><span data-i18n="session.label">Session</span><select id="session-select" aria-label="Review session" data-i18n-aria="session.aria"><option value="" data-i18n="session.loading">Loading sessions...</option></select></label>
-      <a id="review-queue-link" class="review-queue-link" href="review" data-i18n="review.queue">Review decisions</a>
       <div class="display-controls">
         <label class="language-picker"><span class="sr-only" data-i18n="language.label">Language</span><select id="language-select" aria-label="Language" data-i18n-aria="language.label"><option value="en">EN</option><option value="uk">УКР</option></select></label>
         <button id="theme-toggle" class="icon-toggle" type="button" aria-label="Use light theme" data-i18n-aria="theme.light"><span aria-hidden="true">&#9788;</span></button>
@@ -488,6 +487,20 @@ final class Application
           <p id="analysis-reason" class="analysis-reason" data-i18n="selected.prompt">Select a committed layer to inspect its result.</p>
           <dl id="layer-summary"></dl>
           <details id="metadata-details" class="metadata-details"><summary data-i18n="meta.summary">Technical details</summary><dl id="layer-facts"></dl></details>
+          <details id="decision-details" class="metadata-details decision-details">
+            <summary id="decision-summary" aria-disabled="true" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 6.5 13.3 10.7 17.5 12 13.3 13.3 12 17.5 10.7 13.3 6.5 12 10.7 10.7Z"/><circle cx="18" cy="6" r="1"/></svg><span data-i18n="review.title">CV assessment review</span><span id="decision-badge" class="decision-badge" data-i18n="review.unavailable">Unavailable</span></summary>
+            <div class="decision-content">
+              <p class="decision-explainer" data-i18n="review.explainer">Agree or disagree with the recorded CV assessment. This does not change alerts or printer state.</p>
+              <form id="decision-unlock" class="decision-unlock"><label for="decision-token" data-i18n="review.token">Private review token</label><div><input id="decision-token" type="password" autocomplete="off" aria-label="Private review token" data-i18n-aria="review.token" required><button type="submit" data-i18n="review.unlock">Unlock</button></div></form>
+              <button id="decision-lock" class="decision-lock" type="button" data-i18n="review.lock" hidden>Lock decisions</button>
+              <p id="decision-status" class="decision-status" role="status" aria-live="polite"></p>
+              <div id="decision-controls" hidden>
+                <label class="decision-note"><span data-i18n="review.note">Optional observation</span><textarea id="decision-note" maxlength="1000" rows="2"></textarea></label>
+                <div class="decision-buttons"><button id="decision-approve" type="button" data-i18n="review.approve">Approve CV</button><button id="decision-reject" type="button" data-i18n="review.reject">Reject CV</button></div>
+                <details id="decision-history" class="decision-history" hidden><summary data-i18n="review.history">Decision history</summary><ol id="decision-history-list"></ol></details>
+              </div>
+            </div>
+          </details>
           <section class="argon-panel"><div class="subheading"><span data-i18n="argon.title">Argon snapshot</span><strong id="argon-combined">--</strong></div><div id="argon-state" class="argon-state" data-i18n="argon.unavailable">Argon context unavailable.</div><div id="argon-runway" class="argon-runway" data-state="muted">Argon left: --</div></section>
         </aside>
       </section>
