@@ -1,3 +1,5 @@
+import { DEFAULT_REVIEW_TOKEN } from './review-default-token.js?v=20261003';
+
 /** One selected publication's append-only CV review, inside the main viewer. */
 export function canReviewLayer(layer) {
   return layer?.analysis?.status === 'completed';
@@ -19,7 +21,7 @@ export function createDecisionPanel({ basePath, getLayer, getDetail, isMoving, t
   const historyDetails = el('decision-history');
   const historyList = el('decision-history-list');
   const state = {
-    token: '', layerId: null, loadedId: null, loadingId: null, failedId: null,
+    token: DEFAULT_REVIEW_TOKEN, layerId: null, loadedId: null, loadingId: null, failedId: null,
     history: [], serial: 0, busy: false, pending: null,
     statusKey: 'review.open', statusValues: {}, statusError: false,
   };

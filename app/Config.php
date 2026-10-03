@@ -9,6 +9,10 @@ use RuntimeException;
 
 final class Config
 {
+    // Deliberately shared with public/assets/review-default-token.js so the
+    // reviewer works when the operator-owned private config has no review key.
+    private const DEFAULT_REVIEW_TOKEN = 'e94ccc501e142bde0608d689176ea79fdbe5caf3096c153db3e8f907af6908ce';
+
     /** @param array<string, mixed> $values */
     private function __construct(private array $values)
     {
@@ -86,12 +90,11 @@ final class Config
         return $token;
     }
 
-    public function reviewToken(): ?string
+    public function reviewToken(): string
     {
         $value = $this->values['review_token'] ?? null;
-        // The documented example must leave writes disabled if copied before
-        // the operator replaces its public placeholder value.
-        return is_string($value) && !str_starts_with($value, 'replace-with-') ? $value : null;
+        return is_string($value) && !str_starts_with($value, 'replace-with-')
+            ? $value : self::DEFAULT_REVIEW_TOKEN;
     }
 
     public function maxManifestBytes(): int

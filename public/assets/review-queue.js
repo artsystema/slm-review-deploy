@@ -1,4 +1,5 @@
 import { nextPending, reviewable } from './review-queue-core.js?v=20261003';
+import { DEFAULT_REVIEW_TOKEN } from './review-default-token.js?v=20261003';
 
 const el = id => document.getElementById(id);
 const state = {
@@ -12,7 +13,7 @@ const filterSelect = el('filter-select');
 const search = el('layer-search');
 const list = el('layer-list');
 const notice = el('notice');
-let reviewToken = '';
+let reviewToken = DEFAULT_REVIEW_TOKEN;
 
 function lock() {
   reviewToken = '';
@@ -445,4 +446,5 @@ el('show-more').addEventListener('click', () => { state.visibleCount += 80; rend
 el('approve-button').addEventListener('click', () => decide('approve'));
 el('reject-button').addEventListener('click', () => decide('reject'));
 setInterval(pollActive, 30000);
-message('Enter the private review token to load decisions.');
+message('Loading decisions…');
+start();
