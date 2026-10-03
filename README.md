@@ -164,10 +164,12 @@ allowlist if decisions must be limited to operators. A custom private
 `review_token` of at least 32 characters overrides the default, and the browser
 then asks for it. Do not reuse the ingest token.
 
-Open `https://slm.artsystema.com/`, select a layer, and expand **CV assessment
-review** below **Technical details**. The section is inactive when the selected
-layer has no completed CV assessment. The existing `/review` queue remains
-available for bulk review: it selects the latest
+Open `https://slm.artsystema.com/` and select a layer. **CV assessment review**
+appears below **Technical details** only when the layer has a completed CV
+assessment and its detail contains a completed, valid NODE1 Ollama
+`vision_job` observation. The current remote layer API does not publish that
+field, so the inline section is hidden for existing sessions. The existing
+`/review` queue remains available for bulk review: it selects the latest
 published session by default; `lmnlck` and `lmnst_2309` can be chosen from the
 session list when their bundles are present. You can filter awaiting review,
 CV flagged, all, approved, or rejected layers; search an exact layer number;

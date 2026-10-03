@@ -484,7 +484,7 @@ final class Application
           <p id="analysis-reason" class="analysis-reason" data-i18n="selected.prompt">Select a committed layer to inspect its result.</p>
           <dl id="layer-summary"></dl>
           <details id="metadata-details" class="metadata-details"><summary data-i18n="meta.summary">Technical details</summary><dl id="layer-facts"></dl></details>
-          <details id="decision-details" class="metadata-details decision-details">
+          <details id="decision-details" class="metadata-details decision-details" hidden>
             <summary id="decision-summary" aria-disabled="true" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 6.5 13.3 10.7 17.5 12 13.3 13.3 12 17.5 10.7 13.3 6.5 12 10.7 10.7Z"/><circle cx="18" cy="6" r="1"/></svg><span data-i18n="review.title">CV assessment review</span><span id="decision-badge" class="decision-badge" data-i18n="review.unavailable">Unavailable</span></summary>
             <div class="decision-content">
               <p class="decision-explainer" data-i18n="review.explainer">Agree or disagree with the recorded CV assessment. This does not change alerts or printer state.</p>

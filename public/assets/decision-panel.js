@@ -1,8 +1,20 @@
 import { DEFAULT_REVIEW_TOKEN } from './review-default-token.js?v=20261003';
 
-/** One selected publication's append-only CV review, inside the main viewer. */
+/** Require a published, completed NODE1 observation before showing this section. */
+export function hasWrittenOllamaResult(layer) {
+  const job = layer?.vision_job;
+  return job?.schema_version === 'vision.job.v1'
+    && job.status === 'completed'
+    && job.result_schema_version === 'large-gap-observation.v2'
+    && job.observation?.schema_version === 'large-gap-observation.v2'
+    && ['likely_gap', 'no_clear_gap', 'uncertain'].includes(job.observation.verdict)
+    && typeof job.observation.cue === 'string'
+    && job.observation.cue.trim().length > 0;
+}
+
+/** CV decisions remain distinct from the independent Ollama observation. */
 export function canReviewLayer(layer) {
-  return layer?.analysis?.status === 'completed';
+  return layer?.analysis?.status === 'completed' && hasWrittenOllamaResult(layer);
 }
 
 export function createDecisionPanel({ basePath, getLayer, getDetail, isMoving, translate, locale }) {
@@ -52,7 +64,8 @@ export function createDecisionPanel({ basePath, getLayer, getDetail, isMoving, t
     } else {
       setStatus(state.statusKey, state.statusValues, state.statusError);
     }
-    const available = canReviewLayer(layer);
+    const available = canReviewLayer(getDetail());
+    details.hidden = !available;
     summary.setAttribute('aria-disabled', String(!available));
     summary.tabIndex = available ? 0 : -1;
     summary.title = available ? '' : translate('review.unavailable_detail');
