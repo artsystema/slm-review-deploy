@@ -9,13 +9,14 @@ It is deliberately dependency-free: cPanel already provides PHP and MySQL,
 and the service uses PDO rather than Composer or a long-running process.
 
 The main viewer has a collapsed **Live chamber** panel below its top bar.
-It is unconfigured until private `config.php` sets `chamber_stream_url` to a
-credential-free HTTPS player page on a protected video origin. The iframe loads
-only while the panel is open and unloads when closed; the adjacent link opens
-the player in a full tab for browser sign-in. The PHP host does not ingest or
-serve video. Direct NODE1 deployment is staged but blocked by its router's
-private WAN IPv4; the video path must avoid the Free-plan public Cloudflare
-Tunnel. See [remote chamber video plan](../docs/remote-chamber-stream-plan.md).
+It is unconfigured until private `config.php` sets `chamber_stream_url` to
+`https://chamber.artsystema.com/chamber/player.html` and stores a separate
+`chamber_access_secret`. A reviewer already authenticated by cPanel Directory
+Privacy opens the panel without a second password: PHP issues a short-lived
+handoff, and the relay sets its own scoped HTTP-only viewer cookie. The iframe
+loads only while the panel is open and unloads when closed. The adjacent link
+opens the player in a full tab after the handoff succeeds. The PHP host does
+not ingest or serve video. See [remote chamber video plan](../docs/remote-chamber-stream-plan.md).
 
 ## Security gate
 

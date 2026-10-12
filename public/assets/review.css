@@ -309,7 +309,7 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   font-weight: 700;
 }
 .chamber-live > summary:hover { background: var(--hover-wash); }
-.chamber-live-profile { margin-left: auto; color: var(--text-dim); font-size: 10px; font-weight: 500; white-space: nowrap; }
+.chamber-live-profile { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); font-size: 10px; font-weight: 500; white-space: nowrap; }
 .chamber-live-body { padding: 0 10px 10px; }
 .chamber-live-body p { margin: 4px 0 8px; color: var(--text-dim); font-size: 11px; }
 .chamber-live-body a { display: inline-block; margin: 0 0 8px; font-size: 11px; }
