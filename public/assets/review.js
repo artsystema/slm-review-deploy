@@ -148,6 +148,37 @@ const navigatorCanvas = el('navigator-canvas');
 const navigatorWindow = el('navigator-window');
 const languageSelect = el('language-select');
 const themeToggle = el('theme-toggle');
+const chamberLive = el('chamber-live');
+const chamberPlayer = el('chamber-live-player');
+const chamberStatus = el('chamber-live-status');
+const chamberOpen = el('chamber-live-open');
+const chamberPlayerUrl = chamberPlayer?.dataset.streamUrl || '';
+
+function chamberState(key) {
+  chamberStatus.dataset.i18n = key;
+  chamberStatus.textContent = t(key);
+}
+
+// Keep the video request off while the panel is closed. A frame load only
+// confirms the relay page opened; it does not prove that a live frame arrived.
+chamberLive.addEventListener('toggle', () => {
+  if (!chamberLive.open) {
+    chamberPlayer.removeAttribute('src');
+    chamberPlayer.hidden = true;
+    chamberOpen.hidden = true;
+    chamberState('chamber.closed');
+  } else if (!chamberPlayerUrl) {
+    chamberState('chamber.unconfigured');
+  } else {
+    chamberOpen.hidden = false;
+    chamberState('chamber.connecting');
+    chamberPlayer.hidden = false;
+    chamberPlayer.src = chamberPlayerUrl;
+  }
+});
+chamberPlayer.addEventListener('load', () => {
+  if (chamberLive.open) chamberState('chamber.opened');
+});
 
 const basePath = window.location.pathname.replace(/\/$/, '');
 const decisionPanel = createDecisionPanel({
