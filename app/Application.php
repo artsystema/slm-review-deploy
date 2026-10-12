@@ -55,6 +55,19 @@ final class Application
         if ($method === 'GET' && $path === '/api/v1/health') {
             Response::json(200, ['status' => 'ok']);
         }
+        if ($method === 'POST' && $path === '/api/v1/chamber/access') {
+            if ($request->header('X-SLM-Chamber-Access') !== '1'
+                || $request->header('Sec-Fetch-Site') === 'cross-site'
+                || $request->authenticatedUser() === null) {
+                throw new HttpError(403, 'authenticated same-origin reviewer is required');
+            }
+            $playerUrl = $this->config->chamberStreamUrl();
+            $secret = $this->config->chamberAccessSecret();
+            if ($playerUrl === null || $secret === null) {
+                throw new HttpError(503, 'chamber access is not configured');
+            }
+            Response::json(200, ['url' => ChamberAccess::bootstrapUrl($playerUrl, $secret)]);
+        }
         if ($method === 'POST' && $path === '/api/v1/ingest/session-ends') {
             $this->requireIngestToken($request);
             $body = $request->jsonBody(1024);
@@ -382,10 +395,10 @@ final class Application
     </header>
     <main class="review-shell">
       <details id="chamber-live" class="panel chamber-live">
-        <summary><span data-i18n="chamber.title">Live chamber</span><span class="chamber-live-profile" data-i18n="chamber.profile">640 × 480 · 12 FPS · remote</span></summary>
+        <summary><span data-i18n="chamber.title">Live chamber</span><span class="chamber-live-profile" data-i18n="chamber.profile">640 × 480 · 12 FPS</span></summary>
         <div class="chamber-live-body">
           <p id="chamber-live-status" role="status" data-i18n="chamber.closed">Open to load the chamber player.</p>
-          <a id="chamber-live-open" href="{{stream_url}}" target="_blank" rel="noopener noreferrer" data-i18n="chamber.open_tab" hidden>Open video page to sign in</a>
+          <a id="chamber-live-open" href="{{stream_url}}" target="_blank" rel="noopener noreferrer" data-i18n="chamber.open_tab" hidden>Open video in new tab</a>
           <iframe id="chamber-live-player" title="Live chamber camera" data-i18n-aria="chamber.player" data-stream-url="{{stream_url}}" allow="autoplay; fullscreen" referrerpolicy="no-referrer" hidden></iframe>
         </div>
       </details>

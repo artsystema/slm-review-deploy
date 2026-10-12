@@ -20,6 +20,9 @@ return [
     // Optional HTTPS player URL on a separately protected video relay.
     // No credentials, tokens, query string, or fragment in this value.
     'chamber_stream_url' => null,
+    // Share only with the NODE1 relay's separate viewer-signing-key file.
+    // Generate a random 48+ character value; never expose it to the browser.
+    'chamber_access_secret' => null,
     'max_manifest_bytes' => 262144,
     'max_media_bytes' => 5242880,
 ];

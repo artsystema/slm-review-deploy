@@ -153,6 +153,8 @@ const chamberPlayer = el('chamber-live-player');
 const chamberStatus = el('chamber-live-status');
 const chamberOpen = el('chamber-live-open');
 const chamberPlayerUrl = chamberPlayer?.dataset.streamUrl || '';
+const basePath = window.location.pathname.replace(/\/$/, '');
+let chamberAccessRequest = null;
 
 function chamberState(key) {
   chamberStatus.dataset.i18n = key;
@@ -163,6 +165,8 @@ function chamberState(key) {
 // confirms the relay page opened; it does not prove that a live frame arrived.
 chamberLive.addEventListener('toggle', () => {
   if (!chamberLive.open) {
+    chamberAccessRequest?.abort();
+    chamberAccessRequest = null;
     chamberPlayer.removeAttribute('src');
     chamberPlayer.hidden = true;
     chamberOpen.hidden = true;
@@ -170,17 +174,45 @@ chamberLive.addEventListener('toggle', () => {
   } else if (!chamberPlayerUrl) {
     chamberState('chamber.unconfigured');
   } else {
-    chamberOpen.hidden = false;
     chamberState('chamber.connecting');
-    chamberPlayer.hidden = false;
-    chamberPlayer.src = chamberPlayerUrl;
+    chamberAccessRequest = new AbortController();
+    const signal = chamberAccessRequest.signal;
+    (async () => {
+      try {
+        const response = await fetch(`${basePath}/api/v1/chamber/access`, {
+          method: 'POST',
+          headers: { 'X-SLM-Chamber-Access': '1' },
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal,
+        });
+        if (!response.ok) throw new Error('chamber access unavailable');
+        const { url } = await response.json();
+        const handoff = new URL(url);
+        if (handoff.origin !== new URL(chamberPlayerUrl).origin || handoff.pathname !== '/chamber/access' || !handoff.hash) {
+          throw new Error('invalid chamber handoff');
+        }
+        if (signal.aborted || !chamberLive.open) return;
+        chamberPlayer.hidden = false;
+        chamberPlayer.src = handoff.href;
+      } catch (_) {
+        if (!signal.aborted && chamberLive.open) chamberState('chamber.unavailable');
+      }
+    })();
   }
 });
-chamberPlayer.addEventListener('load', () => {
-  if (chamberLive.open) chamberState('chamber.opened');
+window.addEventListener('message', (event) => {
+  if (!chamberLive.open || event.source !== chamberPlayer.contentWindow || !chamberPlayerUrl) return;
+  if (event.origin !== new URL(chamberPlayerUrl).origin || event.data?.type !== 'slm-chamber-access') return;
+  if (event.data.state === 'ready') {
+    chamberOpen.hidden = false;
+    chamberState('chamber.opened');
+  } else if (event.data.state === 'failed') {
+    chamberOpen.hidden = true;
+    chamberState('chamber.unavailable');
+  }
 });
 
-const basePath = window.location.pathname.replace(/\/$/, '');
 const decisionPanel = createDecisionPanel({
   basePath,
   getLayer: () => selected(),

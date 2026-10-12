@@ -84,6 +84,14 @@ final class Request
         return 'review-token-holder';
     }
 
+    public function authenticatedUser(): ?string
+    {
+        // Apache sets REMOTE_USER after Directory Privacy validates Basic Auth.
+        // PHP_AUTH_USER alone can reflect an unverified client header.
+        $value = $this->server['REMOTE_USER'] ?? null;
+        return is_string($value) && preg_match('/^[\w.@-]{1,100}$/D', $value) === 1 ? $value : null;
+    }
+
     public function jsonBody(int $maximumBytes): array
     {
         $contentType = $this->header('Content-Type') ?? '';

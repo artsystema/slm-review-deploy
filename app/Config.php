@@ -65,10 +65,13 @@ final class Config
                 || !str_contains($parts['host'], '.')
                 || isset($parts['user']) || isset($parts['pass'])
                 || isset($parts['query']) || isset($parts['fragment'])
-                || preg_match('#^/[A-Za-z0-9_/-]+/?$#D', $parts['path'] ?? '') !== 1
-                || str_contains($parts['path'], '..')) {
+                || ($parts['path'] ?? '') !== '/chamber/player.html') {
                 throw new RuntimeException('chamber_stream_url must be a credential-free HTTPS player URL');
             }
+        }
+        if (array_key_exists('chamber_access_secret', $values) && $values['chamber_access_secret'] !== null
+            && (!is_string($values['chamber_access_secret']) || strlen($values['chamber_access_secret']) < 32)) {
+            throw new RuntimeException('chamber_access_secret must be a long random secret');
         }
         return new self($values);
     }
@@ -129,5 +132,11 @@ final class Config
     {
         $value = $this->values['chamber_stream_url'] ?? null;
         return is_string($value) ? $value : null;
+    }
+
+    public function chamberAccessSecret(): ?string
+    {
+        $value = $this->values['chamber_access_secret'] ?? null;
+        return is_string($value) && strlen($value) >= 32 ? $value : null;
     }
 }

@@ -24,7 +24,7 @@ function renderChamberPage(?string $url): string
 }
 
 if (($argv[1] ?? '') === '--render') {
-    echo renderChamberPage('https://live.example.com/chamber_remote/');
+    echo renderChamberPage('https://live.example.com/chamber/player.html');
     exit(0);
 }
 
@@ -34,7 +34,7 @@ if (strpos($empty, 'id="chamber-live"') === false
     || strpos($empty, 'id="chamber-live"') > strpos($empty, 'id="notice"')) {
     throw new RuntimeException('unconfigured panel is missing or misplaced');
 }
-$url = 'https://live.example.com/chamber_remote/';
+$url = 'https://live.example.com/chamber/player.html';
 $configured = renderChamberPage($url);
 if (!str_contains($configured, 'data-stream-url="' . $url . '"')
     || !str_contains($configured, 'id="chamber-live-open" href="' . $url . '"')

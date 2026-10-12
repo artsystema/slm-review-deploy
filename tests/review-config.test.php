@@ -46,10 +46,25 @@ try {
     if (Config::load($root)->reviewToken() !== $values['review_token']) {
         throw new RuntimeException('configured review token was lost');
     }
-    $values['chamber_stream_url'] = 'https://live.example.com/chamber_remote/';
+    $values['chamber_stream_url'] = 'https://live.example.com/chamber/player.html';
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
     if (Config::load($root)->chamberStreamUrl() !== $values['chamber_stream_url']) {
         throw new RuntimeException('chamber stream player URL was lost');
+    }
+    $values['chamber_access_secret'] = 'short';
+    file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
+    try {
+        Config::load($root);
+        throw new RuntimeException('short chamber access secret was accepted');
+    } catch (RuntimeException $error) {
+        if ($error->getMessage() !== 'chamber_access_secret must be a long random secret') {
+            throw $error;
+        }
+    }
+    $values['chamber_access_secret'] = str_repeat('v', 48);
+    file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
+    if (Config::load($root)->chamberAccessSecret() !== $values['chamber_access_secret']) {
+        throw new RuntimeException('chamber access secret was lost');
     }
     foreach (['http://live.example.com/chamber', 'https://user:pass@live.example.com/chamber',
         'https://live.example.com/chamber?token=secret', 'https://live.example.com/../private'] as $bad) {
