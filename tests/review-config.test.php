@@ -46,6 +46,24 @@ try {
     if (Config::load($root)->reviewToken() !== $values['review_token']) {
         throw new RuntimeException('configured review token was lost');
     }
+    $values['chamber_stream_url'] = 'https://live.example.com/chamber_remote/';
+    file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
+    if (Config::load($root)->chamberStreamUrl() !== $values['chamber_stream_url']) {
+        throw new RuntimeException('chamber stream player URL was lost');
+    }
+    foreach (['http://live.example.com/chamber', 'https://user:pass@live.example.com/chamber',
+        'https://live.example.com/chamber?token=secret', 'https://live.example.com/../private'] as $bad) {
+        $values['chamber_stream_url'] = $bad;
+        file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
+        try {
+            Config::load($root);
+            throw new RuntimeException("unsafe chamber URL accepted: {$bad}");
+        } catch (RuntimeException $error) {
+            if ($error->getMessage() !== 'chamber_stream_url must be a credential-free HTTPS player URL') {
+                throw $error;
+            }
+        }
+    }
 } finally {
     unlink($file);
     rmdir($root . '/private');

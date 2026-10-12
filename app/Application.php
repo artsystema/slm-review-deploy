@@ -47,7 +47,7 @@ final class Application
         $method = $request->method();
         $path = $request->path();
         if ($method === 'GET' && $path === '/') {
-            Response::html(self::page());
+            Response::html($this->page());
         }
         if ($method === 'GET' && $path === '/review') {
             Response::html(self::reviewPage());
@@ -355,7 +355,7 @@ final class Application
         ];
     }
 
-    private static function page(): string
+    private function page(): string
     {
         $html = <<<'HTML'
 <!doctype html>
@@ -381,6 +381,14 @@ final class Application
       </button>
     </header>
     <main class="review-shell">
+      <details id="chamber-live" class="panel chamber-live">
+        <summary><span data-i18n="chamber.title">Live chamber</span><span class="chamber-live-profile" data-i18n="chamber.profile">640 × 480 · 12 FPS · remote</span></summary>
+        <div class="chamber-live-body">
+          <p id="chamber-live-status" role="status" data-i18n="chamber.closed">Open to load the chamber player.</p>
+          <a id="chamber-live-open" href="{{stream_url}}" target="_blank" rel="noopener noreferrer" data-i18n="chamber.open_tab" hidden>Open video page to sign in</a>
+          <iframe id="chamber-live-player" title="Live chamber camera" data-i18n-aria="chamber.player" data-stream-url="{{stream_url}}" allow="autoplay; fullscreen" referrerpolicy="no-referrer" hidden></iframe>
+        </div>
+      </details>
       <section id="notice" class="notice" aria-live="polite" data-i18n="notice.loading">Loading committed sessions...</section>
       <section class="selected-grid" aria-label="Selected layer" data-i18n-aria="selected.aria">
         <article class="panel viewer-card">
@@ -515,6 +523,7 @@ HTML;
         return strtr($html, [
             '{{asset:review.css}}' => self::asset('review.css'),
             '{{asset:review.js}}' => self::asset('review.js'),
+            '{{stream_url}}' => htmlspecialchars($this->config->chamberStreamUrl() ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
         ]);
     }
 

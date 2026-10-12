@@ -56,6 +56,20 @@ final class Config
                 throw new RuntimeException("{$key} must be a positive integer");
             }
         }
+        if (array_key_exists('chamber_stream_url', $values) && $values['chamber_stream_url'] !== null) {
+            $url = $values['chamber_stream_url'];
+            $parts = is_string($url) ? parse_url($url) : false;
+            if ($parts === false || !is_array($parts)
+                || ($parts['scheme'] ?? '') !== 'https'
+                || !isset($parts['host'])
+                || !str_contains($parts['host'], '.')
+                || isset($parts['user']) || isset($parts['pass'])
+                || isset($parts['query']) || isset($parts['fragment'])
+                || preg_match('#^/[A-Za-z0-9_/-]+/?$#D', $parts['path'] ?? '') !== 1
+                || str_contains($parts['path'], '..')) {
+                throw new RuntimeException('chamber_stream_url must be a credential-free HTTPS player URL');
+            }
+        }
         return new self($values);
     }
 
@@ -109,5 +123,11 @@ final class Config
         /** @var int $value */
         $value = $this->values['max_media_bytes'];
         return $value;
+    }
+
+    public function chamberStreamUrl(): ?string
+    {
+        $value = $this->values['chamber_stream_url'] ?? null;
+        return is_string($value) ? $value : null;
     }
 }

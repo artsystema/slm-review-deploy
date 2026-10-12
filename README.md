@@ -8,6 +8,15 @@ the `review-sync` agent.
 It is deliberately dependency-free: cPanel already provides PHP and MySQL,
 and the service uses PDO rather than Composer or a long-running process.
 
+The main viewer has a collapsed **Live chamber** panel below its top bar.
+It is unconfigured until private `config.php` sets `chamber_stream_url` to a
+credential-free HTTPS player page on a protected video origin. The iframe loads
+only while the panel is open and unloads when closed; the adjacent link opens
+the player in a full tab for browser sign-in. The PHP host does not ingest or
+serve video. Direct NODE1 deployment is staged but blocked by its router's
+private WAN IPv4; the video path must avoid the Free-plan public Cloudflare
+Tunnel. See [remote chamber video plan](../docs/remote-chamber-stream-plan.md).
+
 ## Security gate
 
 **Do not deploy or configure the sync agent until the chosen hostname has a

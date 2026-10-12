@@ -17,6 +17,9 @@ return [
     // A custom token overrides the published default; this placeholder uses it.
     // Set a different token only when the operator will enter it in the browser.
     'review_token' => 'replace-with-a-different-long-random-review-token',
+    // Optional HTTPS player URL on a separately protected video relay.
+    // No credentials, tokens, query string, or fragment in this value.
+    'chamber_stream_url' => null,
     'max_manifest_bytes' => 262144,
     'max_media_bytes' => 5242880,
 ];
