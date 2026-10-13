@@ -20,6 +20,7 @@ import {
   formatElapsed,
   followingLabelKey,
   formatBuildEta,
+  gridColumns,
   highestReceived,
   layerNearestBuildFraction,
   normalizeBuild,
@@ -696,5 +697,25 @@ describe('the build behind the layers', () => {
   it('has nothing to select when nothing is held or nothing is known', () => {
     assert.equal(layerNearestBuildFraction([], 100, 0.5), null);
     assert.equal(layerNearestBuildFraction(layers, 0, 0.5), null);
+  });
+});
+
+describe('gridColumns', () => {
+  it('keeps four views as a 2x2 sheet rather than one row of strips', () => {
+    assert.equal(gridColumns(4), 2);
+    assert.equal(gridColumns(3), 2);
+    assert.equal(gridColumns(2), 2);
+  });
+
+  it('widens only when more views are published', () => {
+    assert.equal(gridColumns(5), 3);
+    assert.equal(gridColumns(6), 3);
+    assert.equal(gridColumns(7), 4);
+    assert.equal(gridColumns(8), 4);
+  });
+
+  it('gives a lone view the whole width', () => {
+    assert.equal(gridColumns(1), 1);
+    assert.equal(gridColumns(0), 1);
   });
 });
