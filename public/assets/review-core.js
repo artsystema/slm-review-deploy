@@ -589,6 +589,17 @@ export function visibleBuildEta(build, layers, nowMs) {
   return age >= -60_000 && age <= 20 * 60_000 ? eta : null;
 }
 
+/**
+ * Columns for the every-view grid. Up to four views make a 2x2 sheet, the same
+ * 4:3 shape as the single view; four across would shrink them to a strip of
+ * quarter-width tiles. More views widen to three, then four, across.
+ */
+export function gridColumns(count) {
+  if (count <= 1) return 1;
+  if (count <= 4) return 2;
+  return count <= 6 ? 3 : 4;
+}
+
 /** Following an ended print means newest published evidence, not a live printer. */
 export function followingLabelKey(following, unseen, sessionState) {
   if (following) return sessionState === 'ended' ? 'follow.latest' : 'follow.live';

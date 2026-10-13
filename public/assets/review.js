@@ -7,6 +7,7 @@ import {
   elapsedTicks,
   eligible,
   formatBuildEta,
+  gridColumns,
   formatElapsed,
   followingLabelKey,
   highestReceived,
@@ -39,7 +40,8 @@ import {
 // token is what rescues the browsers that cached a copy before that existed.
 // This update imports a new status helper and translation tokens, so both
 // module URLs change with it even in browsers holding an older cached copy.
-} from './review-core.js?v=20261001';
+// 2026-10-14: review-core.js gained gridColumns, so its token moved again.
+} from './review-core.js?v=20261014';
 import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261013';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
@@ -883,6 +885,7 @@ function setGrid(showing) {
 function renderGrid(layer) {
   stageGrid.replaceChildren();
   const media = layerMedia(layer);
+  stageGrid.style.setProperty('--grid-columns', String(gridColumns(media.length)));
   for (const item of media) {
     const tile = document.createElement('button');
     tile.type = 'button';

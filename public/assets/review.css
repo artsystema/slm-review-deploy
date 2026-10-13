@@ -553,13 +553,14 @@ body.chamber-lightbox-active { overflow: hidden; }
 .evidence-selector { min-height: 36px; }
 
 /*
- * A contact sheet, not a gallery: four across so the eight published views land
- * as two rows. The 1px gap is the panel showing through, which separates the
- * tiles without spending any width on borders.
+ * A contact sheet, not a gallery. renderGrid sets --grid-columns from the view
+ * count (gridColumns): four views as 2x2, the single view's own shape, and up
+ * to four across when more are published. The 1px gap is the panel showing
+ * through, which separates the tiles without spending any width on borders.
  */
 .stage-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--grid-columns, 4), minmax(0, 1fr));
   gap: 1px;
   padding: 0;
   background: var(--border);
@@ -620,6 +621,9 @@ body.chamber-lightbox-active { overflow: hidden; }
 
 /* The grid is a mode, not a view, so it is allowed its own height. */
 .stage.is-grid { aspect-ratio: auto; max-height: none; }
+/* No taller than the single view's cap: a 2x2 sheet has the stage's own
+   aspect, so this width gives exactly that height on a wide viewer. */
+.stage.is-grid .stage-grid { max-width: calc(min(64vh, 700px) * var(--stage-aspect, 4 / 3)); margin-inline: auto; }
 .stage.is-grid .stage-viewport,
 .stage.is-grid .stage-hint { display: none; }
 .stage.is-grid .fill-toggle,
