@@ -9,11 +9,11 @@ It is deliberately dependency-free: cPanel already provides PHP and MySQL,
 and the service uses PDO rather than Composer or a long-running process.
 
 The main viewer has an always-visible **Live chamber** card to the left of the
-layer viewer on wide desktops. Its column reaches 540 px while the selected
-layer column stays 330 px. The selected-layer card matches the viewer height;
-the chamber card ends under its 4:3 picture rather than stretching around it.
-Below 1480 px the side cards share a column beside the viewer, and on narrow
-screens all cards stack. The card is built like the viewer: a status pill
+layer viewer, with the selected-layer card under it in the same column; the
+viewer takes the rest of the width beside both. The column reaches 540 px on
+wide desktops (1480 px and up) and 250–290 px below that. The chamber card ends
+under its 4:3 picture and the selected-layer card fills the column down to the
+viewer's bottom edge. On narrow screens all cards stack. The card is built like the viewer: a status pill
 (connecting, live, starting, idle, paused, offline, stale), the picture with
 no player controls, and a one-line caption with the reported resolution, frame
 rate and time of the last uploaded segment. The relay player posts
@@ -361,8 +361,8 @@ preserves `private/config.php`, frame data, `app-root.php`, and the public site
 
 The build rail can show an approximate **time remaining** once a live FTP
 watch has a job descriptor and at least ten consecutive printer layer stamps.
-When available, the ETA sits below the received-layer count in the rail's
-right-hand summary.
+When available, the ETA follows the received-layer count on the same line,
+as a bordered label (`183 of 2,355 (≈2d 8h left)`).
 The monitor sums the job file's future per-layer scan times, then adds the
 recent difference between printer elapsed time and planned scan time per
 layer. It publishes one numeric estimate with each new layer. The viewer uses

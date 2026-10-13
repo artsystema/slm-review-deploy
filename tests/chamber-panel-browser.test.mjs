@@ -62,24 +62,19 @@ test('chamber and build rail layouts work across widths; chamber access follows 
       const frame = page.locator('#chamber-live-player');
       const viewer = page.locator('.viewer-card');
       const details = page.locator('.evidence-card');
-      if (width >= 1480) {
-        await assertEventually(async () => {
-          const heights = await Promise.all([viewer, details].map((item) => item.evaluate((node) => node.getBoundingClientRect().height)));
-          assert.ok(Math.max(...heights) - Math.min(...heights) < 2, `desktop card heights: ${heights.join(', ')}`);
-        });
-      }
       const chamberBox = await panel.boundingBox();
       const viewerBox = await viewer.boundingBox();
       const detailsBox = await details.boundingBox();
-      if (width >= 1480) {
-        assert.ok(chamberBox.x < viewerBox.x && viewerBox.x < detailsBox.x, 'desktop should have chamber, viewer, details columns');
-        assert.ok(chamberBox.width >= 539 && chamberBox.width <= 541, 'wide desktop should give chamber a 540px column');
-        assert.ok(viewerBox.width >= 540, 'wide desktop should keep evidence viewer readable');
-        assert.ok(Math.abs(chamberBox.y - viewerBox.y) < 2 && Math.abs(viewerBox.y - detailsBox.y) < 2);
-        assert.ok(chamberBox.height < viewerBox.height, 'chamber card should end with its 4:3 picture, not stretch to the viewer');
-        assert.ok(Math.abs(detailsBox.height - viewerBox.height) < 2, `selected layer should match viewer height: ${JSON.stringify({ chamberBox, viewerBox, detailsBox })}`);
-      } else if (width > 760) {
-        assert.ok(chamberBox.x < viewerBox.x && detailsBox.y > chamberBox.y, 'tablet should keep chamber and details beside viewer');
+      if (width > 760) {
+        assert.ok(chamberBox.x < viewerBox.x && detailsBox.y > chamberBox.y, 'chamber and selected layer should stack beside the viewer');
+        assert.ok(Math.abs(chamberBox.x - detailsBox.x) < 1 && Math.abs(chamberBox.width - detailsBox.width) < 1, 'side cards share one column');
+        assert.ok(Math.abs(chamberBox.y - viewerBox.y) < 2, 'camera and viewer start level');
+        const bottoms = [viewerBox.y + viewerBox.height, detailsBox.y + detailsBox.height];
+        assert.ok(Math.abs(bottoms[0] - bottoms[1]) < 2, `the side column should end with the viewer: ${bottoms.join(', ')}`);
+        if (width >= 1480) {
+          assert.ok(chamberBox.width >= 539 && chamberBox.width <= 541, 'wide desktop should give the side column 540px');
+          assert.ok(viewerBox.width >= width - 540 - 60, 'the viewer takes the rest of the width');
+        }
       } else {
         assert.ok(chamberBox.y < viewerBox.y && viewerBox.y < detailsBox.y, 'phone cards should stack');
       }
@@ -110,8 +105,10 @@ test('chamber and build rail layouts work across widths; chamber access follows 
       const etaBox = await page.locator('#build-rail-eta').boundingBox();
       const railTrackBox = await page.locator('#build-rail-track').boundingBox();
       assert.equal(await page.locator('#build-rail-eta').evaluate((node) => node.parentElement.id), 'build-rail-count');
-      assert.ok(etaBox.y > countValueBox.y, 'ETA should sit below the count');
-      assert.ok(railTrackBox.y > etaBox.y, 'the progress track should follow the count and ETA');
+      assert.ok(etaBox.x >= countValueBox.x + countValueBox.width, 'ETA label follows the count on its line');
+      assert.ok(Math.abs((etaBox.y + etaBox.height / 2) - (countValueBox.y + countValueBox.height / 2)) < 3, 'ETA label is centred on the count');
+      assert.ok(railTrackBox.y > etaBox.y + etaBox.height, 'the progress track should follow the count and ETA');
+      assert.equal(await page.locator('#scrub-bubble').isVisible(), false, 'the scrub bubble must not show empty before any hover');
       assert.ok(await page.locator('#build-rail').evaluate((node) => node.scrollWidth <= node.clientWidth + 1), 'build rail should not overflow');
       await page.locator('#chamber-lightbox-open').click();
       assert.equal(await panel.getAttribute('role'), 'dialog');
