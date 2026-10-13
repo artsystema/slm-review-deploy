@@ -385,10 +385,14 @@ body.chamber-lightbox-active { overflow: hidden; }
 .notice.error { color: var(--crit); border-color: rgb(224 82 58 / 45%); }
 .notice.error::before { background: var(--crit); box-shadow: 0 0 0 3px rgb(224 82 58 / 12%); }
 
+/* Camera over the selected layer, viewer beside both. The camera card is a
+   fixed 4:3 picture, so the layer card under it takes what is left of the
+   viewer's height instead of the column ending in empty space. */
 .selected-grid {
   display: grid;
-  grid-template-areas: "chamber viewer details";
-  grid-template-columns: minmax(320px, 540px) minmax(0, 1fr) 330px;
+  grid-template-areas: "chamber viewer" "details viewer";
+  grid-template-columns: minmax(320px, 540px) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
   gap: 10px;
   align-items: stretch;
 }
@@ -833,7 +837,8 @@ body.chamber-lightbox-active { overflow: hidden; }
   z-index: 3;
 }
 
-.scrub-bubble[hidden] { display: none; }
+.scrub-bubble[hidden],
+.scrub-bubble:empty { display: none; }
 .scrub-bubble[data-severity="warning"] { border-color: rgb(224 166 58 / 55%); color: var(--warn); }
 .scrub-bubble[data-severity="critical"],
 .scrub-bubble[data-severity="emergency"] { border-color: rgb(224 82 58 / 55%); color: var(--crit); }
@@ -1258,11 +1263,7 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 
 @media (max-width: 1479px) {
-  .selected-grid {
-    grid-template-areas: "chamber viewer" "details viewer";
-    grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
-    grid-template-rows: auto 1fr;
-  }
+  .selected-grid { grid-template-columns: minmax(250px, 290px) minmax(0, 1fr); }
 }
 
 @media (max-width: 980px) {
@@ -1390,9 +1391,8 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 
 .build-rail-count {
   display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   grid-column: 2;
   grid-row: 1;
   color: var(--text);
@@ -1402,12 +1402,16 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   white-space: nowrap;
 }
 
+/* A bordered label after the count: an estimate, set apart from the count. */
 .build-rail-eta {
-  font-size: 10px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
   color: var(--text-dim);
-  line-height: 1.2;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
   white-space: nowrap;
 }
 

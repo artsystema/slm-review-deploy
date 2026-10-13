@@ -459,7 +459,7 @@ final class Application
                  aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="No layers">
               <canvas id="scrub-canvas" class="scrub-canvas" aria-hidden="true"></canvas>
               <div id="scrub-playhead" class="scrub-playhead" aria-hidden="true"></div>
-              <div id="scrub-bubble" class="scrub-bubble" aria-hidden="true"></div>
+              <div id="scrub-bubble" class="scrub-bubble" aria-hidden="true" hidden></div>
             </div>
             <div id="navigator" class="navigator" role="group" aria-label="Timeline zoom" data-i18n-aria="timeline.zoom">
               <canvas id="navigator-canvas" class="navigator-canvas" aria-hidden="true"></canvas>
