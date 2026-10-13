@@ -397,20 +397,20 @@ final class Application
       <section id="notice" class="notice" aria-live="polite" data-i18n="notice.loading">Loading committed sessions...</section>
       <section class="selected-grid" aria-label="Live chamber and selected layer" data-i18n-aria="selected.aria">
         <aside id="chamber-live" class="panel chamber-live" aria-label="Live chamber" data-i18n-aria="chamber.title">
-          <div class="chamber-live-heading"><div><span class="chamber-live-kicker" data-i18n="chamber.kicker">CAMERA</span><h2 data-i18n="chamber.title">Live chamber</h2></div><button id="chamber-lightbox-close" class="chamber-lightbox-close" type="button" aria-label="Close enlarged video" data-i18n-aria="chamber.close" hidden>&times;</button></div>
-          <div class="chamber-live-body">
-            <div id="chamber-media" class="chamber-media is-loading">
-              <iframe id="chamber-live-player" title="Live chamber camera" data-i18n-aria="chamber.player" data-stream-url="{{stream_url}}" allow="autoplay; fullscreen" referrerpolicy="no-referrer" hidden></iframe>
-              <span class="chamber-media-placeholder" aria-hidden="true"></span>
+          <div class="chamber-live-heading">
+            <div class="chamber-live-title"><span class="chamber-live-kicker" data-i18n="chamber.kicker">CAMERA</span><h2 data-i18n="chamber.title">Live chamber</h2></div>
+            <span id="chamber-badge" class="chamber-badge" data-state="connecting"><span class="chamber-badge-dot" aria-hidden="true"></span><span id="chamber-badge-label" data-i18n="chamber.badge.connecting">Connecting</span></span>
+            <button id="chamber-lightbox-close" class="chamber-lightbox-close" type="button" aria-label="Close enlarged video" data-i18n-aria="chamber.close" hidden>&times;</button>
+          </div>
+          <div id="chamber-media" class="chamber-media is-loading">
+            <iframe id="chamber-live-player" title="Live chamber camera" data-i18n-aria="chamber.player" data-stream-url="{{stream_url}}" allow="autoplay; fullscreen" referrerpolicy="no-referrer" hidden></iframe>
+            <span class="chamber-media-placeholder" aria-hidden="true"></span>
+            <p id="chamber-live-status" class="chamber-media-message" role="status" data-i18n="chamber.connecting">Opening the video relay…</p>
+            <div class="chamber-media-controls">
               <button id="chamber-lightbox-open" class="chamber-lightbox-open" type="button" aria-label="Enlarge video" data-i18n-aria="chamber.enlarge" title="Enlarge video" data-i18n-title="chamber.enlarge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
-            <p id="chamber-live-status" class="chamber-live-status" role="status" data-i18n="chamber.connecting">Opening the video relay…</p>
-            <dl class="chamber-facts">
-              <div><dt data-i18n="chamber.profile_label">Video</dt><dd data-i18n="chamber.profile">640 × 480 · 12 FPS</dd></div>
-              <div><dt data-i18n="chamber.delivery_label">Delivery</dt><dd data-i18n="chamber.delivery">On demand</dd></div>
-              <div><dt data-i18n="chamber.access_label">Access</dt><dd data-i18n="chamber.access">Protected relay</dd></div>
-            </dl>
           </div>
+          <p id="chamber-caption" class="chamber-caption" data-i18n="chamber.caption_idle">On demand · protected relay</p>
         </aside>
         <div id="chamber-lightbox-backdrop" class="chamber-lightbox-backdrop" hidden></div>
         <article class="panel viewer-card">
@@ -449,8 +449,10 @@ final class Application
               <div id="build-rail-received" class="build-rail-received"></div>
               <div id="build-rail-mark" class="build-rail-mark"></div>
             </div>
-            <span id="build-rail-count" class="build-rail-count"></span>
-            <span id="build-rail-eta" class="build-rail-eta" hidden></span>
+            <span id="build-rail-count" class="build-rail-count">
+              <span id="build-rail-count-value"></span>
+              <span id="build-rail-eta" class="build-rail-eta" hidden></span>
+            </span>
           </div>
           <div class="timeline">
             <div id="scrubber" class="scrubber" role="slider" tabindex="0" aria-label="Layer timeline" data-i18n-aria="timeline.aria"

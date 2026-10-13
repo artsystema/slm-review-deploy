@@ -9,7 +9,7 @@ import { chromium } from '../../frontend/node_modules/playwright/index.mjs';
 const browserPath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const publicRoot = resolve(import.meta.dirname, '../public');
 
-test('chamber iframe follows visible tabs, retries access, and enlarges in place', { skip: !existsSync(browserPath) }, async () => {
+test('chamber and build rail layouts work across widths; chamber access follows visible tabs', { skip: !existsSync(browserPath) }, async () => {
   const rendered = spawnSync('php', [join(import.meta.dirname, 'chamber-panel.test.php'), '--render'], { encoding: 'utf8' });
   assert.equal(rendered.status, 0, rendered.stderr);
   const missing = [];
@@ -49,7 +49,14 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
       const pageErrors = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
       page.on('console', (message) => { if (message.type() === 'error') pageErrors.push(message.text()); });
-      await page.route('https://live.example.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<script>parent.postMessage({type:"slm-chamber-access",state:"ready"},"*")</script><p>relay test page</p>' }));
+      // Stands in for the relay player: announces itself, reports a live
+      // picture, and records whether the review page took over the caption.
+      const relayPage = `<script>
+        addEventListener('message', (event) => { if (event.source === parent && event.data?.type === 'slm-chamber-host') document.body.dataset.hosted = '1'; });
+        parent.postMessage({ type: 'slm-chamber-access', state: 'ready' }, '*');
+        parent.postMessage({ type: 'slm-chamber-video', state: 'live', width: 640, height: 480, fps: 12, uploadedAt: new Date().toISOString() }, '*');
+      </script><p>relay test page</p>`;
+      await page.route('https://live.example.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: relayPage }));
       await page.goto(`http://127.0.0.1:${server.address().port}/`);
       const panel = page.locator('#chamber-live');
       const frame = page.locator('#chamber-live-player');
@@ -57,7 +64,7 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
       const details = page.locator('.evidence-card');
       if (width >= 1480) {
         await assertEventually(async () => {
-          const heights = await Promise.all([panel, viewer, details].map((item) => item.evaluate((node) => node.getBoundingClientRect().height)));
+          const heights = await Promise.all([viewer, details].map((item) => item.evaluate((node) => node.getBoundingClientRect().height)));
           assert.ok(Math.max(...heights) - Math.min(...heights) < 2, `desktop card heights: ${heights.join(', ')}`);
         });
       }
@@ -69,7 +76,7 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
         assert.ok(chamberBox.width >= 539 && chamberBox.width <= 541, 'wide desktop should give chamber a 540px column');
         assert.ok(viewerBox.width >= 540, 'wide desktop should keep evidence viewer readable');
         assert.ok(Math.abs(chamberBox.y - viewerBox.y) < 2 && Math.abs(viewerBox.y - detailsBox.y) < 2);
-        assert.ok(Math.abs(chamberBox.height - viewerBox.height) < 2, 'chamber should match viewer height');
+        assert.ok(chamberBox.height < viewerBox.height, 'chamber card should end with its 4:3 picture, not stretch to the viewer');
         assert.ok(Math.abs(detailsBox.height - viewerBox.height) < 2, `selected layer should match viewer height: ${JSON.stringify({ chamberBox, viewerBox, detailsBox })}`);
       } else if (width > 760) {
         assert.ok(chamberBox.x < viewerBox.x && detailsBox.y > chamberBox.y, 'tablet should keep chamber and details beside viewer');
@@ -80,8 +87,32 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
       assert.equal(await page.locator('#chamber-live-open').count(), 0);
       await assertEventually(async () => assert.equal(await frame.getAttribute('src'), 'https://live.example.com/chamber/access#test-grant', `${pageErrors.join('\n')}\nMissing: ${missing.join(', ')}`));
       const frameBox = await frame.boundingBox();
-      assert.ok(frameBox.width <= chamberBox.width);
-      assert.ok(Math.abs(frameBox.height - frameBox.width) < 2, 'player frame should use a compact square in the sidebar');
+      assert.ok(frameBox.width <= chamberBox.width && frameBox.width >= chamberBox.width - 3, 'player should span the card like the evidence stage');
+      assert.ok(frameBox.height >= frameBox.width * 0.75 - 2, 'player should be at least 4:3, with no caption strip below the picture');
+      await assertEventually(async () => assert.equal(await page.locator('#chamber-badge').getAttribute('data-state'), 'live'));
+      assert.match(await page.locator('#chamber-caption').textContent(), /640 × 480 · 12 FPS · updated /);
+      assert.equal(await page.locator('#chamber-live-status').isVisible(), false, 'no message is laid over a live picture');
+      await assertEventually(async () => assert.equal(await page.frameLocator('#chamber-live-player').locator('body[data-hosted="1"]').count(), 1));
+      const enlargeBox = await page.locator('#chamber-lightbox-open').boundingBox();
+      assert.ok(enlargeBox.y > frameBox.y + frameBox.height / 2 && enlargeBox.x > frameBox.x + frameBox.width / 2, 'enlarge control belongs bottom-right, clear of the burned-in counter');
+      assert.ok(Number(await page.locator('.chamber-media-controls').evaluate((node) => getComputedStyle(node).opacity)) < 1, 'enlarge control stays dimmed over the picture');
+      await page.locator('#chamber-lightbox-open').hover();
+      await assertEventually(async () => assert.equal(await page.locator('.chamber-media-controls').evaluate((node) => getComputedStyle(node).opacity), '1'));
+      await page.evaluate(() => {
+        document.querySelector('#build-rail').hidden = false;
+        document.querySelector('#build-rail-name').textContent = 'Build 1310, extended print name';
+        document.querySelector('#build-rail-count-value').textContent = '1,310 of 2,355';
+        const eta = document.querySelector('#build-rail-eta');
+        eta.textContent = '≈12h 35m left';
+        eta.hidden = false;
+      });
+      const countValueBox = await page.locator('#build-rail-count-value').boundingBox();
+      const etaBox = await page.locator('#build-rail-eta').boundingBox();
+      const railTrackBox = await page.locator('#build-rail-track').boundingBox();
+      assert.equal(await page.locator('#build-rail-eta').evaluate((node) => node.parentElement.id), 'build-rail-count');
+      assert.ok(etaBox.y > countValueBox.y, 'ETA should sit below the count');
+      assert.ok(railTrackBox.y > etaBox.y, 'the progress track should follow the count and ETA');
+      assert.ok(await page.locator('#build-rail').evaluate((node) => node.scrollWidth <= node.clientWidth + 1), 'build rail should not overflow');
       await page.locator('#chamber-lightbox-open').click();
       assert.equal(await panel.getAttribute('role'), 'dialog');
       assert.equal(await panel.getAttribute('aria-modal'), 'true');
@@ -97,6 +128,8 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
       });
       await assertEventually(async () => assert.equal(await frame.getAttribute('src'), null));
       assert.match(await page.locator('#chamber-live-status').textContent(), /paused/i);
+      assert.equal(await page.locator('#chamber-badge').getAttribute('data-state'), 'paused');
+      assert.match(await page.locator('#chamber-caption').textContent(), /On demand/);
       assert.equal(accessRequests, beforeHide);
       await page.evaluate(() => {
         Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });

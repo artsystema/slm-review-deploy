@@ -45,7 +45,9 @@ $configured = renderChamberPage($url);
 if (!str_contains($configured, 'data-stream-url="' . $url . '"')
     || !str_contains($configured, '<aside id="chamber-live"')
     || !str_contains($configured, 'id="chamber-lightbox-open"')
-    || !str_contains($configured, 'class="chamber-facts"')
+    || !str_contains($configured, 'id="chamber-badge"')
+    || !str_contains($configured, 'id="chamber-caption"')
+    || str_contains($configured, 'chamber-facts')
     || str_contains($configured, 'chamber-live-open')
     || str_contains($configured, '<iframe id="chamber-live-player" src=')) {
     throw new RuntimeException('configured panel should be permanent and defer iframe loading to the browser');

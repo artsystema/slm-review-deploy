@@ -40,7 +40,7 @@ import {
 // This update imports a new status helper and translation tokens, so both
 // module URLs change with it even in browsers holding an older cached copy.
 } from './review-core.js?v=20261001';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261003';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261013';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
 const LANGUAGE_KEY = 'slm-review-language';
@@ -133,6 +133,7 @@ const buildRailTrack = el('build-rail-track');
 const buildRailReceived = el('build-rail-received');
 const buildRailMark = el('build-rail-mark');
 const buildRailCount = el('build-rail-count');
+const buildRailCountValue = el('build-rail-count-value');
 const buildRailEta = el('build-rail-eta');
 const fillToggle = el('fill-toggle');
 const gridToggle = el('grid-toggle');
@@ -152,6 +153,9 @@ const chamberLive = el('chamber-live');
 const chamberPlayer = el('chamber-live-player');
 const chamberStatus = el('chamber-live-status');
 const chamberMedia = el('chamber-media');
+const chamberBadge = el('chamber-badge');
+const chamberBadgeLabel = el('chamber-badge-label');
+const chamberCaption = el('chamber-caption');
 const chamberEnlarge = el('chamber-lightbox-open');
 const chamberClose = el('chamber-lightbox-close');
 const chamberBackdrop = el('chamber-lightbox-backdrop');
@@ -160,20 +164,87 @@ const basePath = window.location.pathname.replace(/\/$/, '');
 let chamberAccessRequest = null;
 let chamberRetryTimer = null;
 let chamberWatchdog = null;
+let chamberVideoWatchdog = null;
 let chamberRetryCount = 0;
+let chamberView = { state: 'connecting', video: null };
 
-function chamberState(key) {
-  chamberStatus.dataset.i18n = key;
-  chamberStatus.dataset.state = key.split('.').at(-1);
-  chamberStatus.textContent = t(key);
-  chamberMedia.classList.toggle('is-loading', key === 'chamber.connecting' || key === 'chamber.reconnecting');
+// One table for what each state looks like. The first block comes from this
+// page's own handoff; the second from the relay player's reports, so the state
+// is shown in the reviewer's language rather than the player's English caption.
+// `opened` is a player that does not report yet (an older relay upload): it
+// shows its own status, so nothing is laid over it.
+const CHAMBER_STATES = {
+  unconfigured: { badge: 'off', message: 'chamber.unconfigured' },
+  connecting: { badge: 'connecting', message: 'chamber.connecting', loading: true },
+  reconnecting: { badge: 'connecting', message: 'chamber.reconnecting', loading: true },
+  unavailable: { badge: 'offline', message: 'chamber.unavailable' },
+  paused: { badge: 'paused', message: 'chamber.paused' },
+  opened: { badge: 'connected', message: null },
+  live: { badge: 'live', message: null },
+  standby: { badge: 'starting', message: 'chamber.standby', loading: true },
+  idle: { badge: 'idle', message: 'chamber.idle' },
+  offline: { badge: 'offline', message: 'chamber.offline' },
+  interrupted: { badge: 'offline', message: 'chamber.interrupted' },
+  status_unavailable: { badge: 'offline', message: 'chamber.status_unavailable' },
+  unsupported: { badge: 'offline', message: 'chamber.unsupported' },
+  stale: { badge: 'stale', message: 'chamber.stale' },
+};
+// Player report state -> page state. `expired` is absent: the player follows it
+// with an access failure, which already starts a fresh handoff.
+const CHAMBER_PLAYER_STATES = {
+  live: 'live',
+  standby: 'standby',
+  idle: 'idle',
+  offline: 'offline',
+  interrupted: 'interrupted',
+  unavailable: 'status_unavailable',
+  unsupported: 'unsupported',
+};
+// The player reports every 5 s while it plays; three missed reports means the
+// picture can no longer be trusted to be current.
+const CHAMBER_REPORT_STALE_MS = 15000;
+
+function chamberState(state, video = null) {
+  chamberView = { state, video };
+  renderChamber();
+}
+
+function renderChamber() {
+  const { state, video } = chamberView;
+  const view = CHAMBER_STATES[state];
+  chamberStatus.dataset.state = state;
+  if (view.message) chamberStatus.dataset.i18n = view.message;
+  else delete chamberStatus.dataset.i18n;
+  chamberStatus.textContent = view.message ? t(view.message) : '';
+  chamberStatus.hidden = !view.message;
+  chamberBadge.dataset.state = view.badge;
+  chamberBadgeLabel.dataset.i18n = `chamber.badge.${view.badge}`;
+  chamberBadgeLabel.textContent = t(`chamber.badge.${view.badge}`);
+  chamberMedia.classList.toggle('is-loading', Boolean(view.loading));
+  if (video) {
+    const uploaded = new Date(video.uploadedAt);
+    delete chamberCaption.dataset.i18n;
+    chamberCaption.textContent = t('chamber.caption_live', {
+      width: video.width,
+      height: video.height,
+      fps: video.fps,
+      time: Number.isNaN(uploaded.valueOf())
+        ? t('time.unknown')
+        : uploaded.toLocaleTimeString(localeFor(language), { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    });
+  } else {
+    chamberCaption.dataset.i18n = 'chamber.caption_idle';
+    chamberCaption.textContent = t('chamber.caption_idle');
+  }
 }
 
 function clearChamberTimers() {
   clearTimeout(chamberRetryTimer);
   clearTimeout(chamberWatchdog);
+  clearTimeout(chamberVideoWatchdog);
   chamberRetryTimer = null;
   chamberWatchdog = null;
+  chamberVideoWatchdog = null;
 }
 
 // Unload on hidden/page exit so HLS requests stop; returning to the tab gets
@@ -193,7 +264,7 @@ function retryChamberPlayer() {
   clearChamberTimers();
   chamberPlayer.removeAttribute('src');
   chamberPlayer.hidden = true;
-  chamberState('chamber.unavailable');
+  chamberState('unavailable');
   const delay = Math.min(5000 * 2 ** chamberRetryCount, 30000);
   chamberRetryCount += 1;
   chamberRetryTimer = setTimeout(() => {
@@ -204,15 +275,15 @@ function retryChamberPlayer() {
 
 function syncChamberPlayer() {
   if (!chamberPlayerUrl) {
-    stopChamberPlayer('chamber.unconfigured');
+    stopChamberPlayer('unconfigured');
     return;
   }
   if (document.visibilityState !== 'visible') {
-    stopChamberPlayer('chamber.paused');
+    stopChamberPlayer('paused');
     return;
   }
   if (chamberAccessRequest || chamberRetryTimer || chamberPlayer.hasAttribute('src')) return;
-  chamberState(chamberRetryCount ? 'chamber.reconnecting' : 'chamber.connecting');
+  chamberState(chamberRetryCount ? 'reconnecting' : 'connecting');
   const controller = new AbortController();
   chamberAccessRequest = controller;
   (async () => {
@@ -241,16 +312,48 @@ function syncChamberPlayer() {
     }
   })();
 }
+
+function chamberVideoReport(data) {
+  const state = CHAMBER_PLAYER_STATES[data.state];
+  if (!state) return;
+  clearTimeout(chamberVideoWatchdog);
+  chamberVideoWatchdog = null;
+  if (state !== 'live') {
+    chamberState(state);
+    return;
+  }
+  const video = {
+    width: Number(data.width) || 0,
+    height: Number(data.height) || 0,
+    fps: Number(data.fps) || 0,
+    uploadedAt: String(data.uploadedAt ?? ''),
+  };
+  chamberState('live', video);
+  chamberVideoWatchdog = setTimeout(() => {
+    chamberVideoWatchdog = null;
+    chamberState('stale', video);
+  }, CHAMBER_REPORT_STALE_MS);
+}
+
 document.addEventListener('visibilitychange', syncChamberPlayer);
-window.addEventListener('pagehide', () => stopChamberPlayer('chamber.paused'));
+window.addEventListener('pagehide', () => stopChamberPlayer('paused'));
 window.addEventListener('message', (event) => {
   if (!chamberPlayer.hasAttribute('src') || event.source !== chamberPlayer.contentWindow || !chamberPlayerUrl) return;
-  if (event.origin !== new URL(chamberPlayerUrl).origin || event.data?.type !== 'slm-chamber-access') return;
+  const playerOrigin = new URL(chamberPlayerUrl).origin;
+  if (event.origin !== playerOrigin) return;
+  if (event.data?.type === 'slm-chamber-video') {
+    chamberVideoReport(event.data);
+    return;
+  }
+  if (event.data?.type !== 'slm-chamber-access') return;
   if (event.data.state === 'ready') {
     clearTimeout(chamberWatchdog);
     chamberWatchdog = null;
     chamberRetryCount = 0;
-    chamberState('chamber.opened');
+    // A reporting player hides its own caption once told this page shows the
+    // state; an older player ignores this and keeps its caption.
+    chamberPlayer.contentWindow.postMessage({ type: 'slm-chamber-host' }, playerOrigin);
+    if (!['live', 'stale'].includes(chamberView.state)) chamberState('opened');
   } else if (event.data.state === 'failed') {
     retryChamberPlayer();
   }
@@ -278,14 +381,12 @@ chamberEnlarge.addEventListener('click', () => {
 });
 chamberClose.addEventListener('click', closeChamberLightbox);
 chamberBackdrop.addEventListener('click', closeChamberLightbox);
+// While enlarged the only control is Close (the enlarge button is hidden), so
+// Tab stays on it rather than escaping to the page behind the backdrop.
 document.addEventListener('keydown', (event) => {
   if (!chamberLive.classList.contains('is-lightbox')) return;
   if (event.key === 'Escape') closeChamberLightbox();
-  if (event.key !== 'Tab') return;
-  const buttons = [chamberClose, chamberEnlarge];
-  const index = buttons.indexOf(document.activeElement);
-  if (event.shiftKey && index <= 0) { event.preventDefault(); chamberEnlarge.focus(); }
-  else if (!event.shiftKey && index === buttons.length - 1) { event.preventDefault(); chamberClose.focus(); }
+  if (event.key === 'Tab') { event.preventDefault(); chamberClose.focus(); }
 });
 
 const decisionPanel = createDecisionPanel({
@@ -433,6 +534,7 @@ function setLanguage(next) {
   writePreference(LANGUAGE_KEY, language);
   languageSelect.value = language;
   applyStaticTranslations();
+  renderChamber();
   decisionPanel.sync();
   setTheme(theme, false);
   renderSessionOptions(true);
@@ -1834,7 +1936,7 @@ function renderBuildRail() {
   buildRailName.title = context.filter(Boolean).join(' · ');
 
   buildRailReceived.style.width = `${reached * 100}%`;
-  buildRailCount.textContent = t('build.count', {
+  buildRailCountValue.textContent = t('build.count', {
     received: buildNumber(received),
     total: buildNumber(total),
   });

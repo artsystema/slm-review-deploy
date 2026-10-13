@@ -297,38 +297,66 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   overflow: hidden;
 }
 
-.chamber-live { display: flex; flex-direction: column; min-height: 0; }
-.chamber-live-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 10px; }
+/* ---------- live chamber: built like the viewer card beside it ----------
+   Header, a 4:3 stage the shape of the camera's picture, and a one-line
+   caption. When the row is stretched to the viewer's height the stage keeps
+   its shape and the card's remainder stays empty, rather than letterboxing
+   the video in black bands. Only the lightbox lets the stage grow. */
+.chamber-live { display: flex; flex-direction: column; min-height: 0; background: var(--viewer); }
+.chamber-live-heading { display: flex; align-items: center; gap: 10px; padding: 10px 12px 9px; }
+.chamber-live-title { flex: 1 1 auto; min-width: 0; }
 .chamber-live-kicker { color: var(--text-dim); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
-.chamber-live-heading h2 { margin-top: 3px; font-size: 18px; line-height: 1.15; letter-spacing: -.03em; }
-.chamber-live-body { display: flex; flex: 1; flex-direction: column; gap: 10px; padding: 0 10px 12px; }
-.chamber-media { position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: #090b0e; }
-.chamber-media iframe { display: block; width: 100%; height: 100%; border: 0; }
+.chamber-live-heading h2 { margin-top: 2px; font-size: 16px; line-height: 1.2; letter-spacing: -.02em; }
+
+/* Same pill as the follow toggle, so "live" reads the same everywhere. */
+.chamber-badge { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 22px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); color: var(--text-dim); font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+.chamber-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chamber-badge[data-state="live"] { border-color: rgb(63 185 111 / 40%); background: rgb(63 185 111 / 11%); color: var(--ok); }
+.chamber-badge[data-state="live"] .chamber-badge-dot { animation: follow-pulse 2s ease-in-out infinite; }
+.chamber-badge[data-state="connected"] { color: var(--ok); }
+.chamber-badge[data-state="connecting"],
+.chamber-badge[data-state="starting"] { border-color: rgb(77 163 255 / 45%); background: rgb(77 163 255 / 12%); color: var(--accent); }
+.chamber-badge[data-state="offline"],
+.chamber-badge[data-state="stale"] { border-color: rgb(224 166 58 / 45%); background: rgb(224 166 58 / 12%); color: var(--warn); }
+
+.chamber-media { position: relative; flex: 0 0 auto; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; border-top: 1px solid var(--border); background: var(--stage); }
+.chamber-media iframe { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; }
 .chamber-media iframe[hidden] { display: none; }
-.chamber-media-placeholder { position: absolute; inset: 0; display: none; place-items: center; background: linear-gradient(120deg, #11151c, #212a35, #11151c); background-size: 220% 100%; pointer-events: none; }
+.chamber-media-placeholder { position: absolute; inset: 0; display: none; place-items: center; background: linear-gradient(120deg, #0b0e13, #1a212b, #0b0e13); background-size: 220% 100%; pointer-events: none; }
 .chamber-media.is-loading .chamber-media-placeholder { display: grid; animation: chamber-sheen 1.6s linear infinite; }
-.chamber-media.is-loading .chamber-media-placeholder::after { width: 25px; height: 25px; border: 2px solid rgb(255 255 255 / 25%); border-top-color: var(--accent); border-radius: 50%; content: ""; animation: chamber-spin .8s linear infinite; }
+.chamber-media.is-loading .chamber-media-placeholder::after { width: 24px; height: 24px; border: 2px solid rgb(255 255 255 / 22%); border-top-color: var(--accent); border-radius: 50%; content: ""; animation: chamber-spin .8s linear infinite; }
 @keyframes chamber-sheen { to { background-position: -220% 0; } }
 @keyframes chamber-spin { to { transform: rotate(360deg); } }
-.chamber-lightbox-open,
-.chamber-lightbox-close { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--overlay-control); color: var(--text); cursor: pointer; }
-.chamber-lightbox-open { position: absolute; z-index: 2; top: 8px; right: 8px; }
-.chamber-lightbox-open svg { width: 17px; height: 17px; }
-.chamber-lightbox-close { font-size: 25px; line-height: 1; }
+
+/* State text sits on the stage, as the viewer's own empty states do. */
+.chamber-media-message { position: absolute; top: 50%; left: 50%; max-width: calc(100% - 32px); margin: 0; padding: 6px 12px; border-radius: 8px; background: var(--overlay-label); color: var(--overlay-label-text); font-size: 11px; line-height: 1.45; text-align: center; transform: translate(-50%, -50%); pointer-events: none; }
+.chamber-media.is-loading .chamber-media-message { transform: translate(-50%, 26px); }
+.chamber-media-message[hidden] { display: none; }
+
+/* Bottom-right, clear of the counter burned into the picture's top-right
+   corner, and dimmed like the viewer's stage controls. The pointer over the
+   video is inside the relay's frame, so the stage itself never sees :hover;
+   only the control does. */
+.chamber-media-controls { position: absolute; z-index: 2; right: 8px; bottom: 8px; display: flex; padding: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--overlay-control); backdrop-filter: blur(6px); opacity: .55; transition: opacity 140ms ease-out; }
+.chamber-media-controls:hover,
+.chamber-media-controls:focus-within { opacity: 1; }
+@media (hover: none) { .chamber-media-controls { opacity: .85; } }
+.chamber-lightbox-open { display: grid; width: 30px; height: 26px; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.chamber-lightbox-open:hover { background: var(--hover-wash); color: var(--text); }
+.chamber-lightbox-open svg { width: 15px; height: 15px; }
+.chamber-lightbox-close { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2); color: var(--text-dim); cursor: pointer; font-size: 20px; line-height: 1; }
+.chamber-lightbox-close:hover { border-color: var(--border-strong); color: var(--text); }
 .chamber-lightbox-close[hidden] { display: none; }
-.chamber-live-status { min-height: 33px; padding: 8px 10px; border-left: 2px solid var(--accent); border-radius: 4px; background: var(--panel-2); color: var(--text-dim); font-size: 11px; line-height: 1.5; }
-.chamber-live-status[data-state="unavailable"] { border-color: var(--warn); }
-.chamber-facts { display: block; margin: 0; padding: 0 2px; border-top: 0; }
-.chamber-facts > div { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.35; }
-.chamber-facts dt { color: var(--text-dim); }
-.chamber-facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+.chamber-caption { min-height: 28px; margin: 0; padding: 6px 9px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--panel-3); color: var(--text-dim); font-family: Consolas, "Courier New", monospace; font-size: 10px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .chamber-lightbox-backdrop { position: fixed; z-index: 99; inset: 0; background: rgb(5 8 12 / 82%); backdrop-filter: blur(6px); }
 .chamber-lightbox-backdrop[hidden] { display: none; }
 body.chamber-lightbox-active { overflow: hidden; }
-.chamber-live.is-lightbox { position: fixed; z-index: 100; inset: 3vh 3vw; width: min(1000px, 94vw); height: 94vh; max-height: 920px; margin: auto; box-shadow: 0 20px 70px rgb(0 0 0 / 50%); }
-.chamber-live.is-lightbox .chamber-live-body { min-height: 0; overflow-y: auto; }
-.chamber-live.is-lightbox .chamber-media { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; }
-.chamber-live.is-lightbox .chamber-facts { flex: 0 0 auto; }
+.chamber-live.is-lightbox { position: fixed; z-index: 100; inset: 3vh 3vw; width: min(1100px, 94vw); height: 94vh; max-height: 900px; margin: auto; box-shadow: 0 20px 70px rgb(0 0 0 / 50%); }
+.chamber-live.is-lightbox .chamber-media { flex: 1 1 auto; aspect-ratio: auto; }
+.chamber-live.is-lightbox .chamber-caption { border-bottom: 0; }
+.chamber-live.is-lightbox .chamber-media-controls { display: none; }
 
 .notice {
   position: relative;
@@ -364,7 +392,9 @@ body.chamber-lightbox-active { overflow: hidden; }
   gap: 10px;
   align-items: stretch;
 }
-.chamber-live { grid-area: chamber; }
+/* The chamber card ends with its picture; stretching it to the viewer's
+   height would only add an empty panel under a fixed 4:3 stage. */
+.chamber-live { grid-area: chamber; align-self: start; }
 .viewer-card { grid-area: viewer; }
 .evidence-card { grid-area: details; }
 
@@ -1215,7 +1245,9 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 
 @media (prefers-reduced-motion: reduce) {
   .chamber-media.is-loading .chamber-media-placeholder,
-  .chamber-media.is-loading .chamber-media-placeholder::after { animation: none; }
+  .chamber-media.is-loading .chamber-media-placeholder::after,
+  .chamber-badge[data-state="live"] .chamber-badge-dot { animation: none; }
+  .chamber-media-controls { transition: none; }
   .stage.is-waiting::before,
   .stage.is-loading::after { animation: none; }
   .filmstrip { scroll-behavior: auto; }
@@ -1253,9 +1285,9 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .selected-grid,
   .metrics-grid { grid-template-columns: 1fr; }
   .selected-grid { grid-template-areas: "chamber" "viewer" "details"; grid-template-rows: auto; }
-  .chamber-media { max-width: 480px; }
+  .chamber-media { max-height: 56vh; }
   .chamber-live.is-lightbox { inset: 2vh 2vw; width: 96vw; height: 96vh; }
-  .chamber-live.is-lightbox .chamber-media { max-width: none; }
+  .chamber-live.is-lightbox .chamber-media { max-height: none; }
   .stage { max-height: 56vh; }
 
   /* Two across on a phone: four 90px tiles show nothing worth clicking into. */
@@ -1357,6 +1389,10 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 
 .build-rail-count {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 2px;
   grid-column: 2;
   grid-row: 1;
   color: var(--text);
@@ -1367,11 +1403,11 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 
 .build-rail-eta {
-  grid-column: 1 / -1;
-  grid-row: 3;
   font-size: 10px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
+  line-height: 1.2;
   white-space: nowrap;
 }
 
