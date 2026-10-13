@@ -360,7 +360,7 @@ body.chamber-lightbox-active { overflow: hidden; }
 .selected-grid {
   display: grid;
   grid-template-areas: "chamber viewer details";
-  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) 330px;
+  grid-template-columns: minmax(320px, 540px) minmax(0, 1fr) 330px;
   gap: 10px;
   align-items: stretch;
 }
@@ -1225,7 +1225,7 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .follow-toggle.is-following .follow-dot { animation: none; }
 }
 
-@media (max-width: 1279px) {
+@media (max-width: 1479px) {
   .selected-grid {
     grid-template-areas: "chamber viewer" "details viewer";
     grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);

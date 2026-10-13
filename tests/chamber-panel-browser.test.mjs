@@ -44,7 +44,7 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
   let browser;
   try {
     browser = await chromium.launch({ executablePath: browserPath, headless: true });
-    for (const width of [1600, 1000, 390]) {
+    for (const width of [1600, 1480, 1479, 1000, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 800 } });
       const pageErrors = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -55,7 +55,7 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
       const frame = page.locator('#chamber-live-player');
       const viewer = page.locator('.viewer-card');
       const details = page.locator('.evidence-card');
-      if (width >= 1280) {
+      if (width >= 1480) {
         await assertEventually(async () => {
           const heights = await Promise.all([panel, viewer, details].map((item) => item.evaluate((node) => node.getBoundingClientRect().height)));
           assert.ok(Math.max(...heights) - Math.min(...heights) < 2, `desktop card heights: ${heights.join(', ')}`);
@@ -64,8 +64,10 @@ test('chamber iframe follows visible tabs, retries access, and enlarges in place
       const chamberBox = await panel.boundingBox();
       const viewerBox = await viewer.boundingBox();
       const detailsBox = await details.boundingBox();
-      if (width >= 1280) {
+      if (width >= 1480) {
         assert.ok(chamberBox.x < viewerBox.x && viewerBox.x < detailsBox.x, 'desktop should have chamber, viewer, details columns');
+        assert.ok(chamberBox.width >= 539 && chamberBox.width <= 541, 'wide desktop should give chamber a 540px column');
+        assert.ok(viewerBox.width >= 540, 'wide desktop should keep evidence viewer readable');
         assert.ok(Math.abs(chamberBox.y - viewerBox.y) < 2 && Math.abs(viewerBox.y - detailsBox.y) < 2);
         assert.ok(Math.abs(chamberBox.height - viewerBox.height) < 2, 'chamber should match viewer height');
         assert.ok(Math.abs(detailsBox.height - viewerBox.height) < 2, `selected layer should match viewer height: ${JSON.stringify({ chamberBox, viewerBox, detailsBox })}`);

@@ -9,8 +9,10 @@ It is deliberately dependency-free: cPanel already provides PHP and MySQL,
 and the service uses PDO rather than Composer or a long-running process.
 
 The main viewer has an always-visible **Live chamber** card to the left of the
-layer viewer on desktop; both side cards match the viewer height on wide
-screens, and the cards stack on narrow screens.
+layer viewer on wide desktops. Its column reaches 540 px while the selected
+layer column stays 330 px; both side cards match the viewer height. Below
+1480 px the side cards share a column beside the viewer, and on narrow
+screens all cards stack.
 It is unconfigured until private `config.php` sets `chamber_stream_url` to
 `https://chamber.artsystema.com/chamber/player.html` and stores a separate
 `chamber_access_secret`. A reviewer already authenticated by cPanel Directory
