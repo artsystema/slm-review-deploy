@@ -297,25 +297,66 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   overflow: hidden;
 }
 
-.chamber-live { overflow: hidden; }
-.chamber-live > summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 7px 12px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-}
-.chamber-live > summary:hover { background: var(--hover-wash); }
-.chamber-live-profile { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); font-size: 10px; font-weight: 500; white-space: nowrap; }
-.chamber-live-body { padding: 0 10px 10px; }
-.chamber-live-body p { margin: 4px 0 8px; color: var(--text-dim); font-size: 11px; }
-.chamber-live-body a { display: inline-block; margin: 0 0 8px; font-size: 11px; }
-.chamber-live-body a[hidden] { display: none; }
-.chamber-live iframe { display: block; width: min(100%, 640px); aspect-ratio: 4 / 3; border: 0; border-radius: 6px; background: #090b0e; }
-.chamber-live iframe[hidden] { display: none; }
+/* ---------- live chamber: built like the viewer card beside it ----------
+   Header, a 4:3 stage the shape of the camera's picture, and a one-line
+   caption. When the row is stretched to the viewer's height the stage keeps
+   its shape and the card's remainder stays empty, rather than letterboxing
+   the video in black bands. Only the lightbox lets the stage grow. */
+.chamber-live { display: flex; flex-direction: column; min-height: 0; background: var(--viewer); }
+.chamber-live-heading { display: flex; align-items: center; gap: 10px; padding: 10px 12px 9px; }
+.chamber-live-title { flex: 1 1 auto; min-width: 0; }
+.chamber-live-kicker { color: var(--text-dim); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.chamber-live-heading h2 { margin-top: 2px; font-size: 16px; line-height: 1.2; letter-spacing: -.02em; }
+
+/* Same pill as the follow toggle, so "live" reads the same everywhere. */
+.chamber-badge { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 22px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); color: var(--text-dim); font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+.chamber-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chamber-badge[data-state="live"] { border-color: rgb(63 185 111 / 40%); background: rgb(63 185 111 / 11%); color: var(--ok); }
+.chamber-badge[data-state="live"] .chamber-badge-dot { animation: follow-pulse 2s ease-in-out infinite; }
+.chamber-badge[data-state="connected"] { color: var(--ok); }
+.chamber-badge[data-state="connecting"],
+.chamber-badge[data-state="starting"] { border-color: rgb(77 163 255 / 45%); background: rgb(77 163 255 / 12%); color: var(--accent); }
+.chamber-badge[data-state="offline"],
+.chamber-badge[data-state="stale"] { border-color: rgb(224 166 58 / 45%); background: rgb(224 166 58 / 12%); color: var(--warn); }
+
+.chamber-media { position: relative; flex: 0 0 auto; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; border-top: 1px solid var(--border); background: var(--stage); }
+.chamber-media iframe { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; }
+.chamber-media iframe[hidden] { display: none; }
+.chamber-media-placeholder { position: absolute; inset: 0; display: none; place-items: center; background: linear-gradient(120deg, #0b0e13, #1a212b, #0b0e13); background-size: 220% 100%; pointer-events: none; }
+.chamber-media.is-loading .chamber-media-placeholder { display: grid; animation: chamber-sheen 1.6s linear infinite; }
+.chamber-media.is-loading .chamber-media-placeholder::after { width: 24px; height: 24px; border: 2px solid rgb(255 255 255 / 22%); border-top-color: var(--accent); border-radius: 50%; content: ""; animation: chamber-spin .8s linear infinite; }
+@keyframes chamber-sheen { to { background-position: -220% 0; } }
+@keyframes chamber-spin { to { transform: rotate(360deg); } }
+
+/* State text sits on the stage, as the viewer's own empty states do. */
+.chamber-media-message { position: absolute; top: 50%; left: 50%; max-width: calc(100% - 32px); margin: 0; padding: 6px 12px; border-radius: 8px; background: var(--overlay-label); color: var(--overlay-label-text); font-size: 11px; line-height: 1.45; text-align: center; transform: translate(-50%, -50%); pointer-events: none; }
+.chamber-media.is-loading .chamber-media-message { transform: translate(-50%, 26px); }
+.chamber-media-message[hidden] { display: none; }
+
+/* Bottom-right, clear of the counter burned into the picture's top-right
+   corner, and dimmed like the viewer's stage controls. The pointer over the
+   video is inside the relay's frame, so the stage itself never sees :hover;
+   only the control does. */
+.chamber-media-controls { position: absolute; z-index: 2; right: 8px; bottom: 8px; display: flex; padding: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--overlay-control); backdrop-filter: blur(6px); opacity: .55; transition: opacity 140ms ease-out; }
+.chamber-media-controls:hover,
+.chamber-media-controls:focus-within { opacity: 1; }
+@media (hover: none) { .chamber-media-controls { opacity: .85; } }
+.chamber-lightbox-open { display: grid; width: 30px; height: 26px; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.chamber-lightbox-open:hover { background: var(--hover-wash); color: var(--text); }
+.chamber-lightbox-open svg { width: 15px; height: 15px; }
+.chamber-lightbox-close { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2); color: var(--text-dim); cursor: pointer; font-size: 20px; line-height: 1; }
+.chamber-lightbox-close:hover { border-color: var(--border-strong); color: var(--text); }
+.chamber-lightbox-close[hidden] { display: none; }
+
+.chamber-caption { min-height: 28px; margin: 0; padding: 6px 9px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--panel-3); color: var(--text-dim); font-family: Consolas, "Courier New", monospace; font-size: 10px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chamber-lightbox-backdrop { position: fixed; z-index: 99; inset: 0; background: rgb(5 8 12 / 82%); backdrop-filter: blur(6px); }
+.chamber-lightbox-backdrop[hidden] { display: none; }
+body.chamber-lightbox-active { overflow: hidden; }
+.chamber-live.is-lightbox { position: fixed; z-index: 100; inset: 3vh 3vw; width: min(1100px, 94vw); height: 94vh; max-height: 900px; margin: auto; box-shadow: 0 20px 70px rgb(0 0 0 / 50%); }
+.chamber-live.is-lightbox .chamber-media { flex: 1 1 auto; aspect-ratio: auto; }
+.chamber-live.is-lightbox .chamber-caption { border-bottom: 0; }
+.chamber-live.is-lightbox .chamber-media-controls { display: none; }
 
 .notice {
   position: relative;
@@ -346,10 +387,16 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 
 .selected-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-areas: "chamber viewer details";
+  grid-template-columns: minmax(320px, 540px) minmax(0, 1fr) 330px;
   gap: 10px;
   align-items: stretch;
 }
+/* The chamber card ends with its picture; stretching it to the viewer's
+   height would only add an empty panel under a fixed 4:3 stage. */
+.chamber-live { grid-area: chamber; align-self: start; }
+.viewer-card { grid-area: viewer; }
+.evidence-card { grid-area: details; }
 
 /* ---------- viewer ---------- */
 
@@ -1197,6 +1244,10 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 .chip-copy .chip-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
+  .chamber-media.is-loading .chamber-media-placeholder,
+  .chamber-media.is-loading .chamber-media-placeholder::after,
+  .chamber-badge[data-state="live"] .chamber-badge-dot { animation: none; }
+  .chamber-media-controls { transition: none; }
   .stage.is-waiting::before,
   .stage.is-loading::after { animation: none; }
   .filmstrip { scroll-behavior: auto; }
@@ -1206,8 +1257,15 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .follow-toggle.is-following .follow-dot { animation: none; }
 }
 
+@media (max-width: 1479px) {
+  .selected-grid {
+    grid-template-areas: "chamber viewer" "details viewer";
+    grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+}
+
 @media (max-width: 980px) {
-  .selected-grid { grid-template-columns: minmax(0, 1fr) 290px; }
   .evidence-card { padding: 10px; }
   .keyboard-hint { display: none; }
 }
@@ -1226,6 +1284,10 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .review-shell { padding: 8px 10px 18px; }
   .selected-grid,
   .metrics-grid { grid-template-columns: 1fr; }
+  .selected-grid { grid-template-areas: "chamber" "viewer" "details"; grid-template-rows: auto; }
+  .chamber-media { max-height: 56vh; }
+  .chamber-live.is-lightbox { inset: 2vh 2vw; width: 96vw; height: 96vh; }
+  .chamber-live.is-lightbox .chamber-media { max-height: none; }
   .stage { max-height: 56vh; }
 
   /* Two across on a phone: four 90px tiles show nothing worth clicking into. */
@@ -1253,17 +1315,16 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .timeline-foot .keyboard-hint { display: none; }
 }
 
-/* ---------- build rail ----------
-   The whole build on one line: how far it has got, how much of it is here, and
-   where the selected layer sits in it. One rail high on purpose -- it shares a
-   phone's width with the timeline below it, which is the control that does the
-   close work. */
+/* ---------- build rail ---------- */
 .build-rail {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 8px;
+  gap: 8px 12px;
   min-width: 0;
+  padding: 10px 12px 11px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-3);
 }
 
 .build-rail[hidden] {
@@ -1271,20 +1332,24 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 
 .build-rail-name {
-  font-size: 12px;
-  color: var(--text-dim);
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 12ch;
-  flex: 0 1 auto;
 }
 
 .build-rail-track {
   position: relative;
-  flex: 1 1 auto;
-  height: 8px;
-  min-width: 60px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  height: 9px;
+  min-width: 0;
   border-radius: 999px;
   background: var(--border);
   cursor: pointer;
@@ -1324,19 +1389,26 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 
 .build-rail-count {
-  font-size: 12px;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 2px;
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
   white-space: nowrap;
-  flex: 0 0 auto;
 }
 
 .build-rail-eta {
-  font-size: 12px;
+  font-size: 10px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--text);
+  color: var(--text-dim);
+  line-height: 1.2;
   white-space: nowrap;
-  flex: 0 0 auto;
 }
 
 .build-rail-eta[hidden] { display: none; }
@@ -1344,10 +1416,4 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 /* Every layer of the build is here; the rail has nothing left to wait for. */
 .build-rail-count[data-complete='true'] {
   color: var(--ok);
-}
-
-@media (max-width: 520px) {
-  .build-rail-name {
-    display: none;
-  }
 }

@@ -29,16 +29,27 @@ if (($argv[1] ?? '') === '--render') {
 }
 
 $empty = renderChamberPage(null);
-if (strpos($empty, 'id="chamber-live"') === false
-    || strpos($empty, 'data-stream-url=""') === false
-    || strpos($empty, 'id="chamber-live"') > strpos($empty, 'id="notice"')) {
+$notice = strpos($empty, 'id="notice"');
+$grid = strpos($empty, 'class="selected-grid"');
+$chamber = strpos($empty, 'id="chamber-live"');
+$viewer = strpos($empty, 'class="panel viewer-card"');
+$evidence = strpos($empty, 'class="panel evidence-card"');
+if (strpos($empty, 'data-stream-url=""') === false
+    || $notice === false || $grid === false || $chamber === false
+    || $viewer === false || $evidence === false
+    || !($notice < $grid && $grid < $chamber && $chamber < $viewer && $viewer < $evidence)) {
     throw new RuntimeException('unconfigured panel is missing or misplaced');
 }
 $url = 'https://live.example.com/chamber/player.html';
 $configured = renderChamberPage($url);
 if (!str_contains($configured, 'data-stream-url="' . $url . '"')
-    || !str_contains($configured, 'id="chamber-live-open" href="' . $url . '"')
+    || !str_contains($configured, '<aside id="chamber-live"')
+    || !str_contains($configured, 'id="chamber-lightbox-open"')
+    || !str_contains($configured, 'id="chamber-badge"')
+    || !str_contains($configured, 'id="chamber-caption"')
+    || str_contains($configured, 'chamber-facts')
+    || str_contains($configured, 'chamber-live-open')
     || str_contains($configured, '<iframe id="chamber-live-player" src=')) {
-    throw new RuntimeException('configured panel should defer loading until opened');
+    throw new RuntimeException('configured panel should be permanent and defer iframe loading to the browser');
 }
 echo "chamber panel rendering passed\n";

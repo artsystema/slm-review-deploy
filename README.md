@@ -8,15 +8,32 @@ the `review-sync` agent.
 It is deliberately dependency-free: cPanel already provides PHP and MySQL,
 and the service uses PDO rather than Composer or a long-running process.
 
-The main viewer has a collapsed **Live chamber** panel below its top bar.
+The main viewer has an always-visible **Live chamber** card to the left of the
+layer viewer on wide desktops. Its column reaches 540 px while the selected
+layer column stays 330 px. The selected-layer card matches the viewer height;
+the chamber card ends under its 4:3 picture rather than stretching around it.
+Below 1480 px the side cards share a column beside the viewer, and on narrow
+screens all cards stack. The card is built like the viewer: a status pill
+(connecting, live, starting, idle, paused, offline, stale), the picture with
+no player controls, and a one-line caption with the reported resolution, frame
+rate and time of the last uploaded segment. The relay player posts
+`slm-chamber-video` messages (state, size, FPS, segment time) to the page,
+which checks their origin against `chamber_stream_url` and shows the state in
+the reviewer's language; three missed 5-second reports turn the pill to
+*stale*. The page answers the player's `ready` with `slm-chamber-host`, which
+tells the player to hide its own English caption. A player uploaded before this change keeps
+its own caption and the pill only says *connected*.
 It is unconfigured until private `config.php` sets `chamber_stream_url` to
 `https://chamber.artsystema.com/chamber/player.html` and stores a separate
 `chamber_access_secret`. A reviewer already authenticated by cPanel Directory
-Privacy opens the panel without a second password: PHP issues a short-lived
+Privacy opens the page without a second password: PHP issues a short-lived
 handoff, and the relay sets its own scoped HTTP-only viewer cookie. The iframe
-loads only while the panel is open and unloads when closed. The adjacent link
-opens the player in a full tab after the handoff succeeds. The PHP host does
-not ingest or serve video. See [remote chamber video plan](../docs/remote-chamber-stream-plan.md).
+loads automatically in a visible browser tab and unloads when the tab is
+hidden. Showing the tab again requests a fresh grant. Temporary access failures
+retry with bounded backoff. The enlarge button, bottom-right so it stays clear
+of the counter burned into the picture, opens an in-page lightbox using the
+same iframe, without a second grant. The PHP host does not ingest or serve video. See
+[remote chamber video plan](../docs/remote-chamber-stream-plan.md).
 
 ## Security gate
 
@@ -344,6 +361,8 @@ preserves `private/config.php`, frame data, `app-root.php`, and the public site
 
 The build rail can show an approximate **time remaining** once a live FTP
 watch has a job descriptor and at least ten consecutive printer layer stamps.
+When available, the ETA sits below the received-layer count in the rail's
+right-hand summary.
 The monitor sums the job file's future per-layer scan times, then adds the
 recent difference between printer elapsed time and planned scan time per
 layer. It publishes one numeric estimate with each new layer. The viewer uses
