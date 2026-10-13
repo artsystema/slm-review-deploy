@@ -151,33 +151,58 @@ const themeToggle = el('theme-toggle');
 const chamberLive = el('chamber-live');
 const chamberPlayer = el('chamber-live-player');
 const chamberStatus = el('chamber-live-status');
-const chamberOpen = el('chamber-live-open');
+const chamberMedia = el('chamber-media');
+const chamberEnlarge = el('chamber-lightbox-open');
+const chamberClose = el('chamber-lightbox-close');
+const chamberBackdrop = el('chamber-lightbox-backdrop');
 const chamberPlayerUrl = chamberPlayer?.dataset.streamUrl || '';
 const basePath = window.location.pathname.replace(/\/$/, '');
 let chamberAccessRequest = null;
+let chamberRetryTimer = null;
+let chamberWatchdog = null;
+let chamberRetryCount = 0;
 
 function chamberState(key) {
   chamberStatus.dataset.i18n = key;
+  chamberStatus.dataset.state = key.split('.').at(-1);
   chamberStatus.textContent = t(key);
+  chamberMedia.classList.toggle('is-loading', key === 'chamber.connecting' || key === 'chamber.reconnecting');
 }
 
-// A frame load only confirms the relay page opened; it does not prove that a
-// live camera frame arrived. Unload the iframe when the tab is hidden so HLS
-// requests stop; a newly visible tab obtains a fresh one-use access grant.
+function clearChamberTimers() {
+  clearTimeout(chamberRetryTimer);
+  clearTimeout(chamberWatchdog);
+  chamberRetryTimer = null;
+  chamberWatchdog = null;
+}
+
+// Unload on hidden/page exit so HLS requests stop; returning to the tab gets
+// a fresh one-use grant. The relay player handles its own segment retry.
 function stopChamberPlayer(state) {
+  clearChamberTimers();
   chamberAccessRequest?.abort();
   chamberAccessRequest = null;
   chamberPlayer.removeAttribute('src');
   chamberPlayer.hidden = true;
-  chamberOpen.hidden = true;
+  chamberRetryCount = 0;
   chamberState(state);
 }
 
+function retryChamberPlayer() {
+  if (document.visibilityState !== 'visible' || !chamberPlayerUrl) return;
+  clearChamberTimers();
+  chamberPlayer.removeAttribute('src');
+  chamberPlayer.hidden = true;
+  chamberState('chamber.unavailable');
+  const delay = Math.min(5000 * 2 ** chamberRetryCount, 30000);
+  chamberRetryCount += 1;
+  chamberRetryTimer = setTimeout(() => {
+    chamberRetryTimer = null;
+    syncChamberPlayer();
+  }, delay);
+}
+
 function syncChamberPlayer() {
-  if (!chamberLive.open) {
-    stopChamberPlayer('chamber.closed');
-    return;
-  }
   if (!chamberPlayerUrl) {
     stopChamberPlayer('chamber.unconfigured');
     return;
@@ -186,8 +211,8 @@ function syncChamberPlayer() {
     stopChamberPlayer('chamber.paused');
     return;
   }
-  if (chamberAccessRequest || chamberPlayer.hasAttribute('src')) return;
-  chamberState('chamber.connecting');
+  if (chamberAccessRequest || chamberRetryTimer || chamberPlayer.hasAttribute('src')) return;
+  chamberState(chamberRetryCount ? 'chamber.reconnecting' : 'chamber.connecting');
   const controller = new AbortController();
   chamberAccessRequest = controller;
   (async () => {
@@ -205,27 +230,62 @@ function syncChamberPlayer() {
       if (handoff.origin !== new URL(chamberPlayerUrl).origin || handoff.pathname !== '/chamber/access' || !handoff.hash) {
         throw new Error('invalid chamber handoff');
       }
-      if (controller.signal.aborted || !chamberLive.open || document.visibilityState !== 'visible') return;
+      if (controller.signal.aborted || document.visibilityState !== 'visible') return;
       chamberPlayer.hidden = false;
       chamberPlayer.src = handoff.href;
-    } catch (_) {
-      if (!controller.signal.aborted && chamberLive.open) chamberState('chamber.unavailable');
+      chamberWatchdog = setTimeout(retryChamberPlayer, 15000);
+    } catch {
+      if (!controller.signal.aborted) retryChamberPlayer();
     } finally {
       if (chamberAccessRequest === controller) chamberAccessRequest = null;
     }
   })();
 }
-chamberLive.addEventListener('toggle', syncChamberPlayer);
 document.addEventListener('visibilitychange', syncChamberPlayer);
+window.addEventListener('pagehide', () => stopChamberPlayer('chamber.paused'));
 window.addEventListener('message', (event) => {
-  if (!chamberLive.open || event.source !== chamberPlayer.contentWindow || !chamberPlayerUrl) return;
+  if (!chamberPlayer.hasAttribute('src') || event.source !== chamberPlayer.contentWindow || !chamberPlayerUrl) return;
   if (event.origin !== new URL(chamberPlayerUrl).origin || event.data?.type !== 'slm-chamber-access') return;
   if (event.data.state === 'ready') {
-    chamberOpen.hidden = false;
+    clearTimeout(chamberWatchdog);
+    chamberWatchdog = null;
+    chamberRetryCount = 0;
     chamberState('chamber.opened');
   } else if (event.data.state === 'failed') {
-    stopChamberPlayer('chamber.unavailable');
+    retryChamberPlayer();
   }
+});
+syncChamberPlayer();
+
+function closeChamberLightbox() {
+  if (!chamberLive.classList.contains('is-lightbox')) return;
+  chamberLive.classList.remove('is-lightbox');
+  chamberLive.removeAttribute('role');
+  chamberLive.removeAttribute('aria-modal');
+  chamberBackdrop.hidden = true;
+  chamberClose.hidden = true;
+  document.body.classList.remove('chamber-lightbox-active');
+  chamberEnlarge.focus();
+}
+chamberEnlarge.addEventListener('click', () => {
+  chamberLive.classList.add('is-lightbox');
+  chamberLive.setAttribute('role', 'dialog');
+  chamberLive.setAttribute('aria-modal', 'true');
+  chamberBackdrop.hidden = false;
+  chamberClose.hidden = false;
+  document.body.classList.add('chamber-lightbox-active');
+  chamberClose.focus();
+});
+chamberClose.addEventListener('click', closeChamberLightbox);
+chamberBackdrop.addEventListener('click', closeChamberLightbox);
+document.addEventListener('keydown', (event) => {
+  if (!chamberLive.classList.contains('is-lightbox')) return;
+  if (event.key === 'Escape') closeChamberLightbox();
+  if (event.key !== 'Tab') return;
+  const buttons = [chamberClose, chamberEnlarge];
+  const index = buttons.indexOf(document.activeElement);
+  if (event.shiftKey && index <= 0) { event.preventDefault(); chamberEnlarge.focus(); }
+  else if (!event.shiftKey && index === buttons.length - 1) { event.preventDefault(); chamberClose.focus(); }
 });
 
 const decisionPanel = createDecisionPanel({

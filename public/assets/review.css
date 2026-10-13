@@ -297,39 +297,38 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   overflow: hidden;
 }
 
-.chamber-live { align-self: start; }
-.chamber-live > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 10px 12px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  list-style: none;
-}
-.chamber-live > summary::-webkit-details-marker { display: none; }
-.chamber-live > summary::before {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-right: 1.5px solid var(--text-dim);
-  border-bottom: 1.5px solid var(--text-dim);
-  content: "";
-  transform: rotate(-45deg);
-  transition: transform 120ms ease-out;
-}
-.chamber-live[open] > summary::before { transform: rotate(45deg); }
-.chamber-live > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.chamber-live > summary:hover { background: var(--hover-wash); }
-.chamber-live-profile { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); font-size: 10px; font-weight: 500; white-space: nowrap; }
-.chamber-live-body { display: grid; gap: 8px; padding: 0 10px 10px; }
-.chamber-live-body p { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
-.chamber-live-body a { justify-self: start; font-size: 11px; }
-.chamber-live-body a[hidden] { display: none; }
-.chamber-live iframe { display: block; width: 100%; aspect-ratio: 1; border: 0; border-radius: 6px; background: #090b0e; }
-.chamber-live iframe[hidden] { display: none; }
+.chamber-live { display: flex; flex-direction: column; min-height: 0; }
+.chamber-live-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 10px; }
+.chamber-live-kicker { color: var(--text-dim); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.chamber-live-heading h2 { margin-top: 3px; font-size: 18px; line-height: 1.15; letter-spacing: -.03em; }
+.chamber-live-body { display: flex; flex: 1; flex-direction: column; gap: 10px; padding: 0 10px 12px; }
+.chamber-media { position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: #090b0e; }
+.chamber-media iframe { display: block; width: 100%; height: 100%; border: 0; }
+.chamber-media iframe[hidden] { display: none; }
+.chamber-media-placeholder { position: absolute; inset: 0; display: none; place-items: center; background: linear-gradient(120deg, #11151c, #212a35, #11151c); background-size: 220% 100%; pointer-events: none; }
+.chamber-media.is-loading .chamber-media-placeholder { display: grid; animation: chamber-sheen 1.6s linear infinite; }
+.chamber-media.is-loading .chamber-media-placeholder::after { width: 25px; height: 25px; border: 2px solid rgb(255 255 255 / 25%); border-top-color: var(--accent); border-radius: 50%; content: ""; animation: chamber-spin .8s linear infinite; }
+@keyframes chamber-sheen { to { background-position: -220% 0; } }
+@keyframes chamber-spin { to { transform: rotate(360deg); } }
+.chamber-lightbox-open,
+.chamber-lightbox-close { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--overlay-control); color: var(--text); cursor: pointer; }
+.chamber-lightbox-open { position: absolute; z-index: 2; top: 8px; right: 8px; }
+.chamber-lightbox-open svg { width: 17px; height: 17px; }
+.chamber-lightbox-close { font-size: 25px; line-height: 1; }
+.chamber-lightbox-close[hidden] { display: none; }
+.chamber-live-status { min-height: 33px; padding: 8px 10px; border-left: 2px solid var(--accent); border-radius: 4px; background: var(--panel-2); color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+.chamber-live-status[data-state="unavailable"] { border-color: var(--warn); }
+.chamber-facts { display: block; margin: 0; padding: 0 2px; border-top: 0; }
+.chamber-facts > div { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.35; }
+.chamber-facts dt { color: var(--text-dim); }
+.chamber-facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.chamber-lightbox-backdrop { position: fixed; z-index: 99; inset: 0; background: rgb(5 8 12 / 82%); backdrop-filter: blur(6px); }
+.chamber-lightbox-backdrop[hidden] { display: none; }
+body.chamber-lightbox-active { overflow: hidden; }
+.chamber-live.is-lightbox { position: fixed; z-index: 100; inset: 3vh 3vw; width: min(1000px, 94vw); height: 94vh; max-height: 920px; margin: auto; box-shadow: 0 20px 70px rgb(0 0 0 / 50%); }
+.chamber-live.is-lightbox .chamber-live-body { min-height: 0; overflow-y: auto; }
+.chamber-live.is-lightbox .chamber-media { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; }
+.chamber-live.is-lightbox .chamber-facts { flex: 0 0 auto; }
 
 .notice {
   position: relative;
@@ -363,7 +362,7 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   grid-template-areas: "chamber viewer details";
   grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) 330px;
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
 }
 .chamber-live { grid-area: chamber; }
 .viewer-card { grid-area: viewer; }
@@ -1215,6 +1214,8 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 .chip-copy .chip-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
+  .chamber-media.is-loading .chamber-media-placeholder,
+  .chamber-media.is-loading .chamber-media-placeholder::after { animation: none; }
   .stage.is-waiting::before,
   .stage.is-loading::after { animation: none; }
   .filmstrip { scroll-behavior: auto; }
@@ -1252,7 +1253,9 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .selected-grid,
   .metrics-grid { grid-template-columns: 1fr; }
   .selected-grid { grid-template-areas: "chamber" "viewer" "details"; grid-template-rows: auto; }
-  .chamber-live iframe { max-width: 480px; }
+  .chamber-media { max-width: 480px; }
+  .chamber-live.is-lightbox { inset: 2vh 2vw; width: 96vw; height: 96vh; }
+  .chamber-live.is-lightbox .chamber-media { max-width: none; }
   .stage { max-height: 56vh; }
 
   /* Two across on a phone: four 90px tiles show nothing worth clicking into. */
