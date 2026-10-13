@@ -297,24 +297,38 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
   overflow: hidden;
 }
 
-.chamber-live { overflow: hidden; }
+.chamber-live { align-self: start; }
 .chamber-live > summary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 7px 12px;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 12px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
+  list-style: none;
 }
+.chamber-live > summary::-webkit-details-marker { display: none; }
+.chamber-live > summary::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid var(--text-dim);
+  border-bottom: 1.5px solid var(--text-dim);
+  content: "";
+  transform: rotate(-45deg);
+  transition: transform 120ms ease-out;
+}
+.chamber-live[open] > summary::before { transform: rotate(45deg); }
+.chamber-live > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chamber-live > summary:hover { background: var(--hover-wash); }
 .chamber-live-profile { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); font-size: 10px; font-weight: 500; white-space: nowrap; }
-.chamber-live-body { padding: 0 10px 10px; }
-.chamber-live-body p { margin: 4px 0 8px; color: var(--text-dim); font-size: 11px; }
-.chamber-live-body a { display: inline-block; margin: 0 0 8px; font-size: 11px; }
+.chamber-live-body { display: grid; gap: 8px; padding: 0 10px 10px; }
+.chamber-live-body p { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+.chamber-live-body a { justify-self: start; font-size: 11px; }
 .chamber-live-body a[hidden] { display: none; }
-.chamber-live iframe { display: block; width: min(100%, 640px); aspect-ratio: 4 / 3; border: 0; border-radius: 6px; background: #090b0e; }
+.chamber-live iframe { display: block; width: 100%; aspect-ratio: 1; border: 0; border-radius: 6px; background: #090b0e; }
 .chamber-live iframe[hidden] { display: none; }
 
 .notice {
@@ -346,10 +360,14 @@ h2 { font-size: 13px; line-height: 1.2; font-weight: 650; }
 
 .selected-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-areas: "chamber viewer details";
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) 330px;
   gap: 10px;
-  align-items: stretch;
+  align-items: start;
 }
+.chamber-live { grid-area: chamber; }
+.viewer-card { grid-area: viewer; }
+.evidence-card { grid-area: details; }
 
 /* ---------- viewer ---------- */
 
@@ -1206,8 +1224,15 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .follow-toggle.is-following .follow-dot { animation: none; }
 }
 
+@media (max-width: 1279px) {
+  .selected-grid {
+    grid-template-areas: "chamber viewer" "details viewer";
+    grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+}
+
 @media (max-width: 980px) {
-  .selected-grid { grid-template-columns: minmax(0, 1fr) 290px; }
   .evidence-card { padding: 10px; }
   .keyboard-hint { display: none; }
 }
@@ -1226,6 +1251,8 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .review-shell { padding: 8px 10px 18px; }
   .selected-grid,
   .metrics-grid { grid-template-columns: 1fr; }
+  .selected-grid { grid-template-areas: "chamber" "viewer" "details"; grid-template-rows: auto; }
+  .chamber-live iframe { max-width: 480px; }
   .stage { max-height: 56vh; }
 
   /* Two across on a phone: four 90px tiles show nothing worth clicking into. */
@@ -1253,17 +1280,16 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .timeline-foot .keyboard-hint { display: none; }
 }
 
-/* ---------- build rail ----------
-   The whole build on one line: how far it has got, how much of it is here, and
-   where the selected layer sits in it. One rail high on purpose -- it shares a
-   phone's width with the timeline below it, which is the control that does the
-   close work. */
+/* ---------- build rail ---------- */
 .build-rail {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 8px;
+  gap: 8px 12px;
   min-width: 0;
+  padding: 10px 12px 11px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-3);
 }
 
 .build-rail[hidden] {
@@ -1271,20 +1297,24 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 
 .build-rail-name {
-  font-size: 12px;
-  color: var(--text-dim);
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 12ch;
-  flex: 0 1 auto;
 }
 
 .build-rail-track {
   position: relative;
-  flex: 1 1 auto;
-  height: 8px;
-  min-width: 60px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  height: 9px;
+  min-width: 0;
   border-radius: 999px;
   background: var(--border);
   cursor: pointer;
@@ -1324,19 +1354,22 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 
 .build-rail-count {
-  font-size: 12px;
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
   white-space: nowrap;
-  flex: 0 0 auto;
 }
 
 .build-rail-eta {
-  font-size: 12px;
+  grid-column: 1 / -1;
+  grid-row: 3;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
-  color: var(--text);
+  color: var(--text-dim);
   white-space: nowrap;
-  flex: 0 0 auto;
 }
 
 .build-rail-eta[hidden] { display: none; }
@@ -1344,10 +1377,4 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 /* Every layer of the build is here; the rail has nothing left to wait for. */
 .build-rail-count[data-complete='true'] {
   color: var(--ok);
-}
-
-@media (max-width: 520px) {
-  .build-rail-name {
-    display: none;
-  }
 }

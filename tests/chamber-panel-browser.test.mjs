@@ -44,7 +44,7 @@ test('chamber iframe loads only while the remote review panel is open', { skip: 
   let browser;
   try {
     browser = await chromium.launch({ executablePath: browserPath, headless: true });
-    for (const width of [1280, 390]) {
+    for (const width of [1600, 1000, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 800 } });
       const pageErrors = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -53,12 +53,27 @@ test('chamber iframe loads only while the remote review panel is open', { skip: 
       await page.goto(`http://127.0.0.1:${server.address().port}/`);
       const panel = page.locator('#chamber-live');
       const frame = page.locator('#chamber-live-player');
+      const viewer = page.locator('.viewer-card');
+      const details = page.locator('.evidence-card');
+      const chamberBox = await panel.boundingBox();
+      const viewerBox = await viewer.boundingBox();
+      const detailsBox = await details.boundingBox();
+      if (width >= 1280) {
+        assert.ok(chamberBox.x < viewerBox.x && viewerBox.x < detailsBox.x, 'desktop should have chamber, viewer, details columns');
+        assert.ok(Math.abs(chamberBox.y - viewerBox.y) < 2 && Math.abs(viewerBox.y - detailsBox.y) < 2);
+      } else if (width > 760) {
+        assert.ok(chamberBox.x < viewerBox.x && detailsBox.y > chamberBox.y, 'tablet should keep chamber and details beside viewer');
+      } else {
+        assert.ok(chamberBox.y < viewerBox.y && viewerBox.y < detailsBox.y, 'phone cards should stack');
+      }
       assert.equal(await panel.getAttribute('open'), null);
       assert.equal(await frame.getAttribute('src'), null);
       await panel.locator('summary').click();
       await assertEventually(async () => assert.equal(await frame.getAttribute('src'), 'https://live.example.com/chamber/access#test-grant', `${pageErrors.join('\n')}\nMissing: ${missing.join(', ')}`));
       await assertEventually(async () => assert.equal(await page.locator('#chamber-live-open').isVisible(), true));
-      assert.ok((await frame.boundingBox()).width <= width);
+      const frameBox = await frame.boundingBox();
+      assert.ok(frameBox.width <= chamberBox.width);
+      assert.ok(Math.abs(frameBox.height - frameBox.width) < 2, 'player frame should use a compact square in the sidebar');
       const beforeHide = accessRequests;
       await page.evaluate(() => {
         Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });

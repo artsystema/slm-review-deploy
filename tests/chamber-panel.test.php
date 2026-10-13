@@ -29,9 +29,15 @@ if (($argv[1] ?? '') === '--render') {
 }
 
 $empty = renderChamberPage(null);
-if (strpos($empty, 'id="chamber-live"') === false
-    || strpos($empty, 'data-stream-url=""') === false
-    || strpos($empty, 'id="chamber-live"') > strpos($empty, 'id="notice"')) {
+$notice = strpos($empty, 'id="notice"');
+$grid = strpos($empty, 'class="selected-grid"');
+$chamber = strpos($empty, 'id="chamber-live"');
+$viewer = strpos($empty, 'class="panel viewer-card"');
+$evidence = strpos($empty, 'class="panel evidence-card"');
+if (strpos($empty, 'data-stream-url=""') === false
+    || $notice === false || $grid === false || $chamber === false
+    || $viewer === false || $evidence === false
+    || !($notice < $grid && $grid < $chamber && $chamber < $viewer && $viewer < $evidence)) {
     throw new RuntimeException('unconfigured panel is missing or misplaced');
 }
 $url = 'https://live.example.com/chamber/player.html';

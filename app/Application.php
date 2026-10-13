@@ -394,16 +394,16 @@ final class Application
       </button>
     </header>
     <main class="review-shell">
-      <details id="chamber-live" class="panel chamber-live">
-        <summary><span data-i18n="chamber.title">Live chamber</span><span class="chamber-live-profile" data-i18n="chamber.profile">640 × 480 · 12 FPS</span></summary>
-        <div class="chamber-live-body">
-          <p id="chamber-live-status" role="status" data-i18n="chamber.closed">Open to load the chamber player.</p>
-          <a id="chamber-live-open" href="{{stream_url}}" target="_blank" rel="noopener noreferrer" data-i18n="chamber.open_tab" hidden>Open video in new tab</a>
-          <iframe id="chamber-live-player" title="Live chamber camera" data-i18n-aria="chamber.player" data-stream-url="{{stream_url}}" allow="autoplay; fullscreen" referrerpolicy="no-referrer" hidden></iframe>
-        </div>
-      </details>
       <section id="notice" class="notice" aria-live="polite" data-i18n="notice.loading">Loading committed sessions...</section>
-      <section class="selected-grid" aria-label="Selected layer" data-i18n-aria="selected.aria">
+      <section class="selected-grid" aria-label="Live chamber and selected layer" data-i18n-aria="selected.aria">
+        <details id="chamber-live" class="panel chamber-live">
+          <summary><span data-i18n="chamber.title">Live chamber</span><span class="chamber-live-profile" data-i18n="chamber.profile">640 × 480 · 12 FPS</span></summary>
+          <div class="chamber-live-body">
+            <iframe id="chamber-live-player" title="Live chamber camera" data-i18n-aria="chamber.player" data-stream-url="{{stream_url}}" allow="autoplay; fullscreen" referrerpolicy="no-referrer" hidden></iframe>
+            <p id="chamber-live-status" role="status" data-i18n="chamber.closed">Open to load the chamber player.</p>
+            <a id="chamber-live-open" href="{{stream_url}}" target="_blank" rel="noopener noreferrer" data-i18n="chamber.open_tab" hidden>Open video in new tab</a>
+          </div>
+        </details>
         <article class="panel viewer-card">
           <div id="evidence-selector" class="evidence-selector" role="tablist" aria-label="Layer evidence views" data-i18n-aria="evidence.aria"></div>
           <div id="stage" class="stage">
