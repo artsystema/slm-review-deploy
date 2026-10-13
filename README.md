@@ -14,7 +14,9 @@ It is unconfigured until private `config.php` sets `chamber_stream_url` to
 `chamber_access_secret`. A reviewer already authenticated by cPanel Directory
 Privacy opens the panel without a second password: PHP issues a short-lived
 handoff, and the relay sets its own scoped HTTP-only viewer cookie. The iframe
-loads only while the panel is open and unloads when closed. The adjacent link
+loads only while the panel is open in a visible browser tab, and unloads when
+the panel closes or the tab is hidden. Showing the tab again requests a fresh
+grant. The adjacent link
 opens the player in a full tab after the handoff succeeds. The PHP host does
 not ingest or serve video. See [remote chamber video plan](../docs/remote-chamber-stream-plan.md).
 

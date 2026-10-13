@@ -14,9 +14,11 @@ test('chamber iframe loads only while the remote review panel is open', { skip: 
   assert.equal(rendered.status, 0, rendered.stderr);
   const missing = [];
   let allowAccess = true;
+  let accessRequests = 0;
   const server = createServer((request, response) => {
     const pathname = new URL(request.url, 'http://localhost').pathname;
     if (pathname === '/api/v1/chamber/access' && request.method === 'POST') {
+      accessRequests += 1;
       if (!allowAccess) { response.writeHead(403).end(); return; }
       response.setHeader('Content-Type', 'application/json');
       response.end(JSON.stringify({ url: 'https://live.example.com/chamber/access#test-grant' }));
@@ -57,6 +59,20 @@ test('chamber iframe loads only while the remote review panel is open', { skip: 
       await assertEventually(async () => assert.equal(await frame.getAttribute('src'), 'https://live.example.com/chamber/access#test-grant', `${pageErrors.join('\n')}\nMissing: ${missing.join(', ')}`));
       await assertEventually(async () => assert.equal(await page.locator('#chamber-live-open').isVisible(), true));
       assert.ok((await frame.boundingBox()).width <= width);
+      const beforeHide = accessRequests;
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await assertEventually(async () => assert.equal(await frame.getAttribute('src'), null));
+      assert.equal(await page.locator('#chamber-live-open').isVisible(), false);
+      assert.equal(accessRequests, beforeHide);
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await assertEventually(async () => assert.equal(accessRequests, beforeHide + 1));
+      await assertEventually(async () => assert.equal(await frame.getAttribute('src'), 'https://live.example.com/chamber/access#test-grant'));
       await panel.locator('summary').click();
       await assertEventually(async () => assert.equal(await frame.getAttribute('src'), null));
       assert.equal(await page.locator('#chamber-live-open').isVisible(), false);

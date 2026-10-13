@@ -161,46 +161,62 @@ function chamberState(key) {
   chamberStatus.textContent = t(key);
 }
 
-// Keep the video request off while the panel is closed. A frame load only
-// confirms the relay page opened; it does not prove that a live frame arrived.
-chamberLive.addEventListener('toggle', () => {
+// A frame load only confirms the relay page opened; it does not prove that a
+// live camera frame arrived. Unload the iframe when the tab is hidden so HLS
+// requests stop; a newly visible tab obtains a fresh one-use access grant.
+function stopChamberPlayer(state) {
+  chamberAccessRequest?.abort();
+  chamberAccessRequest = null;
+  chamberPlayer.removeAttribute('src');
+  chamberPlayer.hidden = true;
+  chamberOpen.hidden = true;
+  chamberState(state);
+}
+
+function syncChamberPlayer() {
   if (!chamberLive.open) {
-    chamberAccessRequest?.abort();
-    chamberAccessRequest = null;
-    chamberPlayer.removeAttribute('src');
-    chamberPlayer.hidden = true;
-    chamberOpen.hidden = true;
-    chamberState('chamber.closed');
-  } else if (!chamberPlayerUrl) {
-    chamberState('chamber.unconfigured');
-  } else {
-    chamberState('chamber.connecting');
-    chamberAccessRequest = new AbortController();
-    const signal = chamberAccessRequest.signal;
-    (async () => {
-      try {
-        const response = await fetch(`${basePath}/api/v1/chamber/access`, {
-          method: 'POST',
-          headers: { 'X-SLM-Chamber-Access': '1' },
-          credentials: 'same-origin',
-          cache: 'no-store',
-          signal,
-        });
-        if (!response.ok) throw new Error('chamber access unavailable');
-        const { url } = await response.json();
-        const handoff = new URL(url);
-        if (handoff.origin !== new URL(chamberPlayerUrl).origin || handoff.pathname !== '/chamber/access' || !handoff.hash) {
-          throw new Error('invalid chamber handoff');
-        }
-        if (signal.aborted || !chamberLive.open) return;
-        chamberPlayer.hidden = false;
-        chamberPlayer.src = handoff.href;
-      } catch (_) {
-        if (!signal.aborted && chamberLive.open) chamberState('chamber.unavailable');
-      }
-    })();
+    stopChamberPlayer('chamber.closed');
+    return;
   }
-});
+  if (!chamberPlayerUrl) {
+    stopChamberPlayer('chamber.unconfigured');
+    return;
+  }
+  if (document.visibilityState !== 'visible') {
+    stopChamberPlayer('chamber.paused');
+    return;
+  }
+  if (chamberAccessRequest || chamberPlayer.hasAttribute('src')) return;
+  chamberState('chamber.connecting');
+  const controller = new AbortController();
+  chamberAccessRequest = controller;
+  (async () => {
+    try {
+      const response = await fetch(`${basePath}/api/v1/chamber/access`, {
+        method: 'POST',
+        headers: { 'X-SLM-Chamber-Access': '1' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('chamber access unavailable');
+      const { url } = await response.json();
+      const handoff = new URL(url);
+      if (handoff.origin !== new URL(chamberPlayerUrl).origin || handoff.pathname !== '/chamber/access' || !handoff.hash) {
+        throw new Error('invalid chamber handoff');
+      }
+      if (controller.signal.aborted || !chamberLive.open || document.visibilityState !== 'visible') return;
+      chamberPlayer.hidden = false;
+      chamberPlayer.src = handoff.href;
+    } catch (_) {
+      if (!controller.signal.aborted && chamberLive.open) chamberState('chamber.unavailable');
+    } finally {
+      if (chamberAccessRequest === controller) chamberAccessRequest = null;
+    }
+  })();
+}
+chamberLive.addEventListener('toggle', syncChamberPlayer);
+document.addEventListener('visibilitychange', syncChamberPlayer);
 window.addEventListener('message', (event) => {
   if (!chamberLive.open || event.source !== chamberPlayer.contentWindow || !chamberPlayerUrl) return;
   if (event.origin !== new URL(chamberPlayerUrl).origin || event.data?.type !== 'slm-chamber-access') return;
@@ -208,8 +224,7 @@ window.addEventListener('message', (event) => {
     chamberOpen.hidden = false;
     chamberState('chamber.opened');
   } else if (event.data.state === 'failed') {
-    chamberOpen.hidden = true;
-    chamberState('chamber.unavailable');
+    stopChamberPlayer('chamber.unavailable');
   }
 });
 
