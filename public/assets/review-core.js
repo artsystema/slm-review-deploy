@@ -98,6 +98,128 @@ export function argonSeries(layers) {
 }
 
 /**
+ * The two per-layer area measurements the defect chart plots under its rate.
+ *
+ * Both are fractions of the bed. Anything that is not a finite number is a gap,
+ * never a zero: a layer whose renewal channel did not run was not measured as
+ * fully renewed, and a failed analysis has no deficit to report.
+ *
+ * @returns {{deficit: Array<number|null>, unrenewed: Array<number|null>}}
+ */
+export function areaSeries(layers) {
+  const finite = value => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+  return {
+    deficit: layers.map(layer => finite(layer.analysis?.deficit_area_frac)),
+    unrenewed: layers.map(layer => finite(layer.analysis?.renewal_unrenewed_frac)),
+  };
+}
+
+/** The 1, 2, 5 step at or above `rough`, for axis ticks. */
+function niceStep(rough) {
+  if (!(rough > 0) || !Number.isFinite(rough)) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const fraction = rough / magnitude;
+  const nice = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return nice * magnitude;
+}
+
+/**
+ * A value axis that ends on round numbers and encloses `[low, high]`.
+ *
+ * `minSpan` keeps a flat series from producing an axis a rounding error wide:
+ * a build with no flagged layers still gets a readable 0-to-something scale
+ * rather than one whose ticks are all labelled 0.00%.
+ *
+ * @returns {{min: number, max: number, step: number, ticks: number[]}}
+ */
+export function niceTicks(low, high, maxTicks = 4, minSpan = 0) {
+  let lo = Number.isFinite(low) ? low : 0;
+  let hi = Number.isFinite(high) ? high : lo;
+  if (hi < lo) [lo, hi] = [hi, lo];
+  if (hi - lo < minSpan) {
+    const middle = (hi + lo) / 2;
+    lo = lo >= 0 && middle - minSpan / 2 < 0 ? 0 : middle - minSpan / 2;
+    hi = lo + minSpan;
+  }
+  if (hi === lo) {
+    const pad = Math.abs(hi) > 0 ? Math.abs(hi) * 0.05 : 1;
+    lo -= pad;
+    hi += pad;
+  }
+  const step = niceStep((hi - lo) / Math.max(1, maxTicks));
+  const min = Math.floor(lo / step + 1e-9) * step;
+  const max = Math.ceil(hi / step - 1e-9) * step;
+  const ticks = [];
+  for (let value = min; value <= max + step * 1e-6; value += step) {
+    // Repeated addition drifts (0.1 + 0.2); round to the step's own precision.
+    ticks.push(Number(value.toFixed(Math.max(0, -Math.floor(Math.log10(step)) + 2))));
+  }
+  return { min, max, step, ticks };
+}
+
+/**
+ * Decimal places that tell adjacent ticks of `step` apart and no more.
+ *
+ * @param {number} step in display units (percent, MPa, ...)
+ */
+export function tickDecimals(step) {
+  if (!(step > 0) || !Number.isFinite(step)) return 0;
+  for (let decimals = 0; decimals < 4; decimals += 1) {
+    const scaled = step * 10 ** decimals;
+    if (Math.abs(scaled - Math.round(scaled)) < 1e-6 * Math.max(1, scaled)) return decimals;
+  }
+  return 4;
+}
+
+/**
+ * Where to mark layer numbers along a chart's horizontal axis.
+ *
+ * The charts plot by build position, so a mark sits on the first layer at or
+ * past a round layer number. Where layer numbers do not rise through the build
+ * -- a session that restarted its numbering -- the marks fall back to round
+ * positions labelled with whatever layer is there. Marks closer than
+ * `minGapPx` are dropped.
+ *
+ * @param {number[]} indices layer number at each build position
+ * @returns {Array<{position: number, label: number}>}
+ */
+export function layerTicks(indices, width, minGapPx = 56) {
+  const count = indices.length;
+  if (count === 0 || width <= 0) return [];
+  if (count === 1) return [{ position: 0, label: indices[0] }];
+  const slots = Math.max(1, Math.floor(width / minGapPx));
+  const xOf = position => (position / (count - 1)) * width;
+  let rising = true;
+  for (let position = 1; position < count && rising; position += 1) {
+    if (indices[position] < indices[position - 1]) rising = false;
+  }
+  const first = indices[0];
+  const last = indices[count - 1];
+  const candidates = [];
+  if (rising && last > first) {
+    const step = Math.max(1, niceStep((last - first) / slots));
+    let cursor = 0;
+    for (let mark = Math.ceil(first / step) * step; mark <= last; mark += step) {
+      while (cursor < count && indices[cursor] < mark) cursor += 1;
+      if (cursor >= count) break;
+      candidates.push(cursor);
+    }
+  } else {
+    const step = Math.max(1, niceStep((count - 1) / slots));
+    for (let position = 0; position < count; position += step) candidates.push(position);
+  }
+  const ticks = [];
+  let lastX = -Infinity;
+  for (const position of candidates) {
+    const x = xOf(position);
+    if (x - lastX < minGapPx) continue;
+    lastX = x;
+    ticks.push({ position, label: indices[position] });
+  }
+  return ticks;
+}
+
+/**
  * Reduce a per-layer series to at most `columns` pixel columns.
  *
  * Each column keeps both the minimum and the maximum reading that falls in it,

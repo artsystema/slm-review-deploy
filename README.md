@@ -85,7 +85,8 @@ paths are examples only; substitute the cPanel account's actual home path.
    then `migrations/003_monitor_version.sql`, then
    `migrations/004_layer_summary.sql`, then `migrations/005_run_mode.sql`,
    then `migrations/006_job_descriptor.sql`, then `migrations/007_session_ends.sql`,
-   then `migrations/008_layer_reviews.sql`,
+   then `migrations/008_layer_reviews.sql`, then
+   `migrations/009_layer_summary_renewal.sql`,
    with phpMyAdmin into the new database.
    Later migrations are required when upgrading an existing install:
    002 adds the index behind the build-ordered timeline, 003 records which
@@ -99,6 +100,11 @@ paths are examples only; substitute the cPanel account's actual home path.
    terminal session timestamps independently of immutable layer bundles. Import
    007 before deploying reviewer code that queries it. Import 008 before
    deploying `/review`; the page needs its decision table even for reads.
+   Import 009 before deploying the code that reads it: it adds the unrenewed
+   area to the session index, and without it both the timeline request and
+   every ingest fail on the missing column. Like 004 it needs no backfill;
+   rows summarised before it are re-read from their manifests, a bounded
+   number per request.
 
    **Deploy this service before the monitor that sends `run.mode`.** The
    validator accepts the field as optional, so a reviewer updated first is happy
@@ -382,6 +388,16 @@ pixels rather than the layers:
   keeping each column's extremes -- the worst severity, and the minimum and
   maximum reading. A single flagged layer or a one-layer spike therefore still
   paints on a build far longer than the strip is wide.
+- Both charts share one layout: a caption over each lane, round-number value
+  ticks in a gutter sized to the widest label, and layer numbers along the
+  bottom, on canvases of equal height so the two plots line up across the row.
+  The defect chart has two lanes on the same layer axis -- the rolling defect
+  rate (share of the last 40 layers) and, below it, deficit and unrenewed area
+  (share of the bed) -- rather than one scale that would flatten either. A
+  layer without a renewal measurement is a gap, and a build with none dims
+  that legend entry.
+- The selected layer's deficit area, unrenewed area, confidence and state are
+  separate bordered tiles, styled like the monitor's defect stats.
 - Series are recomputed when layers arrive, not when the selection moves.
   Stepping a layer redraws the frame, the sidebar, the playhead and the chart
   marker only.

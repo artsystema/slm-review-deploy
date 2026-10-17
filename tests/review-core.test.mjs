@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  areaSeries,
   argonSeries,
   clampWindow,
   decimate,
@@ -23,14 +24,17 @@ import {
   gridColumns,
   highestReceived,
   layerNearestBuildFraction,
+  layerTicks,
   normalizeBuild,
   isWholeBuild,
   loadedColumns,
   longPauses,
   nextFinding,
+  niceTicks,
   scrollOffsetFor,
   scrubScale,
   severityColumns,
+  tickDecimals,
   timeBasis,
   visibleWindow,
   visibleBuildEta,
@@ -717,5 +721,69 @@ describe('gridColumns', () => {
   it('gives a lone view the whole width', () => {
     assert.equal(gridColumns(1), 1);
     assert.equal(gridColumns(0), 1);
+  });
+});
+
+describe('chart axes', () => {
+  it('ends a value axis on round numbers that enclose the data', () => {
+    assert.deepEqual(niceTicks(7.05, 7.45, 4).ticks, [7, 7.2, 7.4, 7.6]);
+    assert.deepEqual(niceTicks(0, 0.0003, 3, 0.001).ticks, [0, 0.0005, 0.001]);
+  });
+
+  it('gives a flat or empty series a readable span rather than a zero-width axis', () => {
+    const flat = niceTicks(0, 0, 2, 0.05);
+    assert.equal(flat.min, 0);
+    assert.ok(flat.max >= 0.05);
+    const steady = niceTicks(7.4, 7.4, 4);
+    assert.ok(steady.min < 7.4 && steady.max > 7.4);
+  });
+
+  it('labels ticks with as many places as the step needs and no more', () => {
+    assert.equal(tickDecimals(2), 0);
+    assert.equal(tickDecimals(0.2), 1);
+    assert.equal(tickDecimals(0.05), 2);
+    assert.equal(tickDecimals(0.025), 3);
+  });
+
+  it('marks round layer numbers at the build position where each is reached', () => {
+    const indices = Array.from({ length: 600 }, (_, position) => 1755 + position);
+    const ticks = layerTicks(indices, 600, 48);
+    assert.ok(ticks.length >= 4);
+    for (const { position, label } of ticks) {
+      assert.equal(indices[position], label);
+      assert.equal(label % 50, 0);
+    }
+  });
+
+  it('keeps layer marks a label apart however long the build', () => {
+    const indices = Array.from({ length: 5000 }, (_, position) => position + 1);
+    const ticks = layerTicks(indices, 300, 48);
+    for (let i = 1; i < ticks.length; i += 1) {
+      assert.ok((ticks[i].position - ticks[i - 1].position) * 300 / 4999 >= 48);
+    }
+  });
+
+  it('falls back to positions when the numbering restarts mid-session', () => {
+    const indices = [...Array.from({ length: 50 }, (_, i) => i + 100), ...Array.from({ length: 50 }, (_, i) => i + 1)];
+    const ticks = layerTicks(indices, 400, 48);
+    assert.ok(ticks.length > 1);
+    for (const { position, label } of ticks) assert.equal(indices[position], label);
+  });
+
+  it('has nothing to mark on an empty build and one mark on a single layer', () => {
+    assert.deepEqual(layerTicks([], 400), []);
+    assert.deepEqual(layerTicks([12], 400), [{ position: 0, label: 12 }]);
+  });
+});
+
+describe('areaSeries', () => {
+  it('keeps unmeasured layers as gaps, never zero', () => {
+    const area = areaSeries([
+      layer({ analysis: { deficit_area_frac: 0.01, renewal_unrenewed_frac: 0.002 } }),
+      layer({ analysis: { deficit_area_frac: null } }),
+      layer({ analysis: { deficit_area_frac: Number.NaN, renewal_unrenewed_frac: 0 } }),
+    ]);
+    assert.deepEqual(area.deficit, [0.01, null, null]);
+    assert.deepEqual(area.unrenewed, [0.002, null, 0]);
   });
 });
