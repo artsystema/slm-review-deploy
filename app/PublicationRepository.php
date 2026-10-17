@@ -192,6 +192,7 @@ final class PublicationRepository
         $statement = $this->database->prepare(
             'UPDATE publications
                 SET summary_version = :version, deficit_area_frac = :deficit,
+                    renewal_unrenewed_frac = :unrenewed,
                     argon_combined_value = :combined_value, argon_combined_state = :combined_state,
                     argon_units = :units, argon_channels_json = :channels, preview_sha256 = :preview
               WHERE id = :id'
@@ -199,6 +200,7 @@ final class PublicationRepository
         $statement->execute([
             'version' => ReviewRepository::SUMMARY_VERSION,
             'deficit' => $summary['deficit_area_frac'],
+            'unrenewed' => $summary['renewal_unrenewed_frac'],
             'combined_value' => $summary['combined_value'],
             'combined_state' => $summary['combined_state'],
             'units' => $summary['units'],

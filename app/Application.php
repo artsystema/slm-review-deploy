@@ -514,6 +514,7 @@ final class Application
         <aside class="panel evidence-card">
           <div class="selected-heading"><div><p class="eyebrow" data-i18n="selected.eyebrow">SELECTED LAYER</p><h1 id="layer-title" data-i18n="selected.none">No layer</h1></div><span id="layer-severity" class="severity-badge severity-unknown" data-i18n="unknown">unknown</span></div>
           <p id="analysis-reason" class="analysis-reason" data-i18n="selected.prompt">Select a committed layer to inspect its result.</p>
+          <div id="layer-stats" class="layer-stats"></div>
           <dl id="layer-summary"></dl>
           <details id="metadata-details" class="metadata-details"><summary data-i18n="meta.summary">Technical details</summary><dl id="layer-facts"></dl></details>
           <details id="decision-details" class="metadata-details decision-details" hidden>
@@ -534,8 +535,8 @@ final class Application
         </aside>
       </section>
       <section class="metrics-grid">
-        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="quality.eyebrow">ROLLING QUALITY</p><h2 data-i18n="quality.title">Defect rate</h2></div><strong id="defect-rate">--</strong></div><canvas id="defect-chart" height="132" aria-label="Rolling defect rate chart" data-i18n-aria="quality.aria"></canvas><p id="defect-note" class="chart-note"></p></article>
-        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="argon_chart.eyebrow">CAPTURED WITH LAYER</p><h2 data-i18n="argon_chart.title">Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="132" aria-label="Argon snapshot chart" data-i18n-aria="argon_chart.aria"></canvas><p class="chart-note" data-i18n="argon_chart.note">Values are never interpolated. On a build longer than this chart is wide, each pixel column shows the highest and lowest reading in it, and becomes a gap only where the whole column was unreadable.</p></article>
+        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="quality.eyebrow">ROLLING QUALITY</p><h2 data-i18n="quality.title">Defect rate</h2></div><strong id="defect-rate">--</strong></div><div id="defect-legend" class="chart-legend"></div><canvas id="defect-chart" height="168" aria-label="Rolling defect rate chart" data-i18n-aria="quality.aria"></canvas><p id="defect-note" class="chart-note"></p></article>
+        <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="argon_chart.eyebrow">CAPTURED WITH LAYER</p><h2 data-i18n="argon_chart.title">Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="168" aria-label="Argon snapshot chart" data-i18n-aria="argon_chart.aria"></canvas><p class="chart-note" data-i18n="argon_chart.note">Values are never interpolated. On a build longer than this chart is wide, each pixel column shows the highest and lowest reading in it, and becomes a gap only where the whole column was unreadable.</p></article>
       </section>
     </main>
   </div>

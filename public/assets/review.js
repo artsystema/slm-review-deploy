@@ -1,4 +1,5 @@
 import {
+  areaSeries,
   argonSeries,
   clampWindow,
   decimate,
@@ -13,15 +14,18 @@ import {
   highestReceived,
   isWholeBuild,
   layerNearestBuildFraction,
+  layerTicks,
   loadedColumns,
   longPauses,
   nextFinding,
+  niceTicks,
   normalizeBuild,
   isFlagged,
   scrollOffsetFor,
   scrubScale,
   severityColumns,
   severityToken,
+  tickDecimals,
   timeBasis,
   visibleWindow,
   visibleBuildEta,
@@ -41,8 +45,9 @@ import {
 // This update imports a new status helper and translation tokens, so both
 // module URLs change with it even in browsers holding an older cached copy.
 // 2026-10-14: review-core.js gained gridColumns, so its token moved again.
-} from './review-core.js?v=20261014';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261013';
+// 2026-10-17: chart axis helpers and new translation keys; both tokens moved.
+} from './review-core.js?v=20261017';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261017';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
 const LANGUAGE_KEY = 'slm-review-language';
@@ -575,14 +580,15 @@ function numeric(value) { return typeof value === 'number' && Number.isFinite(va
  */
 function renewalFact(layer) {
   const metrics = layer?.analysis?.metrics;
-  if (!metrics || typeof metrics !== 'object') return t('renewal.not_reported');
+  const missing = { value: t('renewal.not_reported'), note: null, missing: true };
+  if (!metrics || typeof metrics !== 'object') return missing;
   const fraction = metrics.renewal_before_after_unrenewed_frac;
-  if (typeof fraction !== 'number' || !Number.isFinite(fraction)) return t('renewal.not_reported');
+  if (typeof fraction !== 'number' || !Number.isFinite(fraction)) return missing;
   const confidence = metrics.renewal_before_after_confidence;
-  const suffix = typeof confidence === 'number' && Number.isFinite(confidence)
-    ? ` / conf ${confidence.toFixed(2)}`
-    : '';
-  return `${percent(fraction)}${suffix}`;
+  const note = typeof confidence === 'number' && Number.isFinite(confidence)
+    ? t('renewal.confidence', { value: confidence.toFixed(2) })
+    : null;
+  return { value: percent(fraction), note, missing: false };
 }
 
 function percent(value) { return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : t('unknown'); }
@@ -718,6 +724,7 @@ function series() {
   seriesCache = {
     windowSize,
     defect: defectRateSeries(state.layers, windowSize),
+    area: areaSeries(state.layers),
     argon: argonSeries(state.layers),
     eligibleCount,
     flaggedCount,
@@ -1635,6 +1642,7 @@ function renderSidebar() {
   const layer = detailed(chosen);
   const waiting = Boolean(chosen) && !detailLoaded(chosen);
   const facts = el('layer-facts');
+  const stats = el('layer-stats');
   const summary = el('layer-summary');
   const title = el('layer-title');
   const argon = el('argon-state');
@@ -1644,6 +1652,7 @@ function renderSidebar() {
   renderRunway();
   if (!layer) {
     facts.innerHTML = '';
+    stats.innerHTML = '';
     summary.innerHTML = '';
     title.textContent = t('selected.none');
     argon.textContent = t('argon.unavailable');
@@ -1663,13 +1672,23 @@ function renderSidebar() {
   reason.textContent = waiting
     ? t('selected.reason_loading')
     : layer.analysis.reason || t('selected.reason_missing');
+  // The measurements get tiles of their own, like the monitor's defect stats;
+  // when and how the layer was processed stay as rows beneath them.
+  const renewal = waiting ? { value: t('loading'), note: null, missing: false } : renewalFact(layer);
+  const deficit = layer.analysis.deficit_area_frac;
+  const statValues = [
+    { label: t('fact.deficit'), value: percent(deficit), missing: typeof deficit !== 'number' },
+    { label: t('fact.unrenewed'), value: renewal.value, note: renewal.note, missing: renewal.missing },
+    { label: t('fact.confidence'), value: pending(numeric(layer.analysis.confidence)) },
+    { label: t('fact.state'), value: pending(valueLabel(layer.analysis.state)) },
+  ];
+  stats.innerHTML = statValues.map(({ label, value, note, missing }) => (
+    `<div class="layer-stat${missing ? ' is-missing' : ''}"><span>${escaped(label)}</span>`
+    + `<b>${escaped(value ?? t('unknown'))}</b>${note ? `<small>${escaped(note)}</small>` : ''}</div>`
+  )).join('');
   const summaryValues = [
     [t('fact.captured'), new Date(layer.captured_at).toLocaleString(localeFor(language))],
     [t('fact.status'), valueLabel(layer.analysis.status)],
-    [t('fact.state'), pending(valueLabel(layer.analysis.state))],
-    [t('fact.deficit'), percent(layer.analysis.deficit_area_frac)],
-    [t('fact.confidence'), pending(numeric(layer.analysis.confidence))],
-    [t('fact.unrenewed'), pending(renewalFact(layer))],
   ];
   const technicalValues = [
     [t('fact.processor'), pending(layer.run ? `${layer.run.processor} ${layer.run.processor_version}` : t('unknown'))],
@@ -2712,21 +2731,25 @@ function canvasContext(id) {
 
 // The plotted series change only when layers arrive; the marker moves with
 // every keystroke. Keeping the drawn series on an offscreen copy means moving
-// the marker costs one blit rather than replotting a build.
+// the marker costs one blit rather than replotting a build. The plot frame is
+// kept beside it, because the marker has to land where the series were drawn.
 const chartBases = new Map();
+const chartFrames = new Map();
 
-function keepChartBase(id, surface) {
+function keepChartBase(id, surface, frame = null) {
   let base = chartBases.get(id);
   if (!base) { base = document.createElement('canvas'); chartBases.set(id, base); }
   base.width = surface.canvas.width;
   base.height = surface.canvas.height;
   if (base.width && base.height) base.getContext('2d').drawImage(surface.canvas, 0, 0);
-  drawSelection(surface.context, surface.width, surface.height);
+  chartFrames.set(id, frame);
+  if (frame) drawSelection(surface.context, frame);
 }
 
 function drawChartSelection() {
   for (const id of ['#defect-chart', '#argon-chart']) {
     const base = chartBases.get(id);
+    const frame = chartFrames.get(id);
     const canvas = document.querySelector(id);
     if (!base || !canvas || !base.width || !base.height) continue;
     const context = canvas.getContext('2d');
@@ -2735,54 +2758,191 @@ function drawChartSelection() {
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(base, 0, 0);
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    drawSelection(context, canvas.clientWidth, canvas.clientHeight);
+    if (frame) drawSelection(context, frame);
   }
 }
 
-function grid(context, width, height) {
-  context.strokeStyle = cssColor('--canvas-grid');
+const AXIS_FONT = '9px "Segoe UI", system-ui, sans-serif';
+// Both charts share these, so with equal canvas heights their plots line up
+// across the row: a caption band over each lane, a band of layer numbers under
+// the last one.
+const CAPTION_BAND = 12;
+const LAYER_BAND = 15;
+const LANE_GAP = 22;
+
+/**
+ * Lay out a chart's lanes, each with its own value axis, over one layer axis.
+ *
+ * The left gutter is sized to the widest tick label any lane needs, so a
+ * pressure axis in tenths and an area axis in hundredths of a percent both fit
+ * without clipping, and the plot starts where the labels end.
+ *
+ * @param {Array<{axis: {min: number, max: number, step: number, ticks: number[]}, format: (v: number) => string, caption: string, weight: number}>} lanes
+ */
+function chartFrame(context, width, height, lanes) {
+  context.font = AXIS_FONT;
+  let widest = 0;
+  for (const lane of lanes) {
+    for (const tick of lane.axis.ticks) widest = Math.max(widest, context.measureText(lane.format(tick)).width);
+  }
+  const left = Math.ceil(Math.max(22, widest + 7));
+  const right = width - 6;
+  const bottom = height - LAYER_BAND;
+  const available = bottom - CAPTION_BAND - LANE_GAP * (lanes.length - 1);
+  const totalWeight = lanes.reduce((sum, lane) => sum + lane.weight, 0) || 1;
+  let top = 0;
+  const placed = lanes.map((lane, index) => {
+    top += index === 0 ? CAPTION_BAND : LANE_GAP;
+    const laneHeight = Math.max(12, Math.floor(available * lane.weight / totalWeight));
+    const placedLane = { ...lane, top, height: laneHeight };
+    top += laneHeight;
+    return placedLane;
+  });
+  // Rounding leaves a pixel or two; the last lane takes them so it meets the
+  // layer band exactly.
+  const last = placed.at(-1);
+  if (last) last.height = bottom - last.top;
+  return { left, right, plotWidth: Math.max(1, right - left), bottom, height, lanes: placed };
+}
+
+function laneY(lane, value) {
+  const span = lane.axis.max - lane.axis.min || 1;
+  return lane.top + (1 - clamp((value - lane.axis.min) / span, 0, 1)) * lane.height;
+}
+
+function xAt(frame, position) {
+  const count = state.layers.length;
+  return count < 2 ? frame.left + frame.plotWidth / 2 : frame.left + position * frame.plotWidth / (count - 1);
+}
+
+/** Grid lines, tick labels and the caption for each lane, then the layer axis. */
+function drawAxes(context, frame) {
+  context.font = AXIS_FONT;
   context.lineWidth = 1;
-  for (let line = 1; line < 4; line += 1) {
-    const y = 12 + ((height - 28) * line / 4);
+  context.fillStyle = cssColor('--text-dim');
+  context.strokeStyle = cssColor('--canvas-grid');
+  for (const lane of frame.lanes) {
+    context.textAlign = 'left';
+    context.textBaseline = 'bottom';
+    context.fillText(lane.caption, frame.left, lane.top - 3);
+    context.textAlign = 'right';
+    context.textBaseline = 'middle';
+    for (const tick of lane.axis.ticks) {
+      const y = Math.round(laneY(lane, tick)) + 0.5;
+      context.beginPath();
+      context.moveTo(frame.left, y);
+      context.lineTo(frame.right, y);
+      context.stroke();
+      context.fillText(lane.format(tick), frame.left - 4, y);
+    }
+  }
+  // Layer numbers: round ones where the build's numbering rises, never closer
+  // than a label's width, and clear of the axis title at the right-hand end.
+  const title = t('chart.layer_axis');
+  const titleWidth = context.measureText(title).width;
+  const labelY = frame.height - 1;
+  context.textBaseline = 'bottom';
+  context.textAlign = 'right';
+  context.fillText(title, frame.right, labelY);
+  context.textAlign = 'center';
+  const ticks = layerTicks(state.layers.map(layer => layer.index), frame.plotWidth, 48);
+  for (const { position, label } of ticks) {
+    const x = Math.round(xAt(frame, position)) + 0.5;
+    const text = String(label);
+    const half = context.measureText(text).width / 2;
+    if (x + half > frame.right - titleWidth - 6) continue;
     context.beginPath();
-    context.moveTo(0, y);
-    context.lineTo(width, y);
+    context.moveTo(x, frame.bottom);
+    context.lineTo(x, frame.bottom + 3);
     context.stroke();
+    context.fillText(text, Math.max(frame.left + half, x), labelY);
   }
 }
 
-function drawSelection(context, width, height) {
+function drawSelection(context, frame) {
   const index = state.layers.findIndex(layer => layer.id === state.selectedId);
   if (index < 0 || state.layers.length < 2) return;
-  const x = index * width / (state.layers.length - 1);
+  const x = xAt(frame, index);
   context.strokeStyle = cssColor('--accent');
   context.globalAlpha = .55;
   context.lineWidth = 1;
   context.beginPath();
-  context.moveTo(x, 5);
-  context.lineTo(x, height - 8);
+  context.moveTo(x, frame.lanes[0]?.top ?? 0);
+  context.lineTo(x, frame.bottom);
   context.stroke();
   context.globalAlpha = 1;
 }
 
+/** Tick labels for a fraction axis, as percent with as many places as the step needs. */
+function percentTick(axis) {
+  const decimals = tickDecimals(axis.step * 100);
+  return value => `${(value * 100).toFixed(decimals)}%`;
+}
+
+function seriesHigh(...all) {
+  let high = -Infinity;
+  for (const points of all) {
+    for (const value of points) if (value != null && value > high) high = value;
+  }
+  return high === -Infinity ? 0 : high;
+}
+
+function legendEntry(label, color, missing = false) {
+  const item = document.createElement('span');
+  const dot = document.createElement('i');
+  dot.className = 'channel-dot';
+  dot.style.setProperty('--channel-color', color);
+  item.append(dot, label);
+  if (missing) { item.classList.add('is-missing'); item.title = t('renewal.not_reported'); }
+  return item;
+}
+
+/**
+ * The rolling defect rate over the two areas a layer is judged from.
+ *
+ * Two lanes rather than one axis: the rate is a share of layers and runs to
+ * 100%, the areas are shares of the bed and usually sit under a percent, so on
+ * a shared scale one or the other would be a flat line on the floor.
+ */
 function renderDefectChart() {
   const surface = canvasContext('#defect-chart');
   const { context, width, height } = surface;
-  grid(context, width, height);
-  const { defect, windowSize, eligibleCount } = series();
+  const { defect, area, windowSize, eligibleCount } = series();
   const last = defect.at(-1);
   el('defect-rate').textContent = last == null ? '--' : percent(last);
   el('defect-note').textContent = t('quality.note', {
     eligible: eligibleCount, total: state.layers.length, window: windowSize,
   });
-  drawLine(context, defect, width, height, cssColor('--accent'), value => 1 - value);
-  keepChartBase('#defect-chart', surface);
+  const colors = {
+    rate: cssColor('--accent'),
+    deficit: cssColor('--series-deficit'),
+    unrenewed: cssColor('--series-unrenewed'),
+  };
+  // A build where renewal never reported keeps its legend entry, dimmed, so
+  // the empty lane reads as "not measured" rather than "measured at zero".
+  el('defect-legend').replaceChildren(
+    legendEntry(t('quality.legend_rate'), colors.rate),
+    legendEntry(t('fact.deficit'), colors.deficit, !area.deficit.some(value => value != null)),
+    legendEntry(t('fact.unrenewed'), colors.unrenewed, !area.unrenewed.some(value => value != null)),
+  );
+  if (!state.layers.length) { keepChartBase('#defect-chart', surface); return; }
+  const rateAxis = niceTicks(0, seriesHigh(defect), 2, 0.05);
+  const areaAxis = niceTicks(0, seriesHigh(area.deficit, area.unrenewed), 3, 0.001);
+  const frame = chartFrame(context, width, height, [
+    { axis: rateAxis, format: percentTick(rateAxis), caption: t('quality.lane_rate', { window: windowSize }), weight: 2 },
+    { axis: areaAxis, format: percentTick(areaAxis), caption: t('quality.lane_area'), weight: 3 },
+  ]);
+  drawAxes(context, frame);
+  const [rateLane, areaLane] = frame.lanes;
+  drawLine(context, defect, frame, rateLane, colors.rate);
+  drawLine(context, area.deficit, frame, areaLane, colors.deficit);
+  drawLine(context, area.unrenewed, frame, areaLane, colors.unrenewed);
+  keepChartBase('#defect-chart', surface, frame);
 }
 
 function renderArgonChart() {
   const surface = canvasContext('#argon-chart');
   const { context, width, height } = surface;
-  grid(context, width, height);
   const byChannel = series().argon;
   const label = el('argon-label');
   const legend = el('argon-legend');
@@ -2799,17 +2959,22 @@ function renderArgonChart() {
   if (low === Infinity) { label.textContent = t('unknown'); keepChartBase('#argon-chart', surface); return; }
   const units = series().units;
   label.textContent = `${numeric(low)}-${numeric(high)} ${units}`.trim();
-  for (const [channel, points] of byChannel) {
-    const color = channelColors[(channel - 1) % channelColors.length];
-    const legendItem = document.createElement('span');
-    const dot = document.createElement('i');
-    dot.className = 'channel-dot';
-    dot.style.setProperty('--channel-color', color);
-    legendItem.append(dot, t('argon_chart.channel', { channel }));
-    legend.append(legendItem);
-    drawLine(context, points, width, height, color, value => (high === low ? 0.5 : (high - value) / (high - low)), true);
+  for (const channel of byChannel.keys()) {
+    legend.append(legendEntry(t('argon_chart.channel', { channel }), channelColors[(channel - 1) % channelColors.length]));
   }
-  keepChartBase('#argon-chart', surface);
+  // A floor on the span: two gauges holding one steady pressure would otherwise
+  // get an axis a hundredth of a unit tall, and draw sensor noise as a cliff.
+  const axis = niceTicks(low, high, 4, Math.max(0.05, Math.abs(high) * 0.01));
+  const decimals = tickDecimals(axis.step);
+  const caption = units ? `${t('argon_chart.lane')} · ${units}` : t('argon_chart.lane');
+  const frame = chartFrame(context, width, height, [
+    { axis, format: value => value.toFixed(decimals), caption, weight: 1 },
+  ]);
+  drawAxes(context, frame);
+  for (const [channel, points] of byChannel) {
+    drawLine(context, points, frame, frame.lanes[0], channelColors[(channel - 1) % channelColors.length], true);
+  }
+  keepChartBase('#argon-chart', surface, frame);
 }
 
 /**
@@ -2839,12 +3004,11 @@ function argonUnits() {
  * per point: stroking inside the loop re-rasterises the whole path every time,
  * which turned a four-thousand-layer argon chart into half a second of work.
  */
-function drawLine(context, points, width, height, color, normalise, stepped = false) {
+function drawLine(context, points, frame, lane, color, stepped = false) {
   context.strokeStyle = color;
   context.lineWidth = 2;
   context.lineJoin = 'round';
-  const span = Math.max(1, points.length - 1);
-  const samples = decimate(points, Math.max(1, Math.round(width)));
+  const samples = decimate(points, Math.max(1, Math.round(frame.plotWidth)));
   let open = false;
   let previousY = 0;
   for (const { index, value } of samples) {
@@ -2853,8 +3017,8 @@ function drawLine(context, points, width, height, color, normalise, stepped = fa
       open = false;
       continue;
     }
-    const x = points.length === 1 ? width / 2 : index * width / span;
-    const y = 12 + normalise(value) * (height - 28);
+    const x = xAt(frame, index);
+    const y = laneY(lane, value);
     if (!open) { context.beginPath(); context.moveTo(x, y); open = true; }
     else if (stepped) { context.lineTo(x, previousY); context.lineTo(x, y); }
     else { context.lineTo(x, y); }

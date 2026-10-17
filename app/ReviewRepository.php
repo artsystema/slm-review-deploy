@@ -9,8 +9,10 @@ use PDOStatement;
 
 final class ReviewRepository
 {
-    /** The shape `summary_version` marks a row as having been written in. */
-    public const SUMMARY_VERSION = 1;
+    /** The shape `summary_version` marks a row as having been written in.
+     *  2 added `renewal_unrenewed_frac` (migration 009); rows at an older
+     *  version are re-summarised from their manifest like unsummarised ones. */
+    public const SUMMARY_VERSION = 2;
 
     /** At most this many rows are summarised on any one read, so a first
      *  request against a long history cannot run past the execution limit.
@@ -176,9 +178,11 @@ final class ReviewRepository
         string $basePath,
     ): array {
         $sql = 'SELECT p.id, p.run_local_id, p.run_mode, p.layer_index, p.captured_at, p.analysis_status,
-                       p.severity, p.summary_version, p.deficit_area_frac, p.argon_combined_value,
-                       p.argon_combined_state, p.argon_units, p.argon_channels_json, p.preview_sha256,
-                       CASE WHEN p.summary_version IS NULL THEN p.manifest_json END AS manifest_json
+                       p.severity, p.summary_version, p.deficit_area_frac, p.renewal_unrenewed_frac,
+                       p.argon_combined_value, p.argon_combined_state, p.argon_units, p.argon_channels_json,
+                       p.preview_sha256,
+                       CASE WHEN p.summary_version IS NULL OR p.summary_version < ' . self::SUMMARY_VERSION . '
+                            THEN p.manifest_json END AS manifest_json
                 FROM publications p
                 WHERE p.status = \'committed\' AND p.monitor_instance_id = :monitor_id'
             . $this->scopeClause($unassigned)
@@ -199,7 +203,7 @@ final class ReviewRepository
         $layers = [];
         $pending = [];
         foreach ($records as $row) {
-            if ($row['summary_version'] === null) {
+            if ($row['summary_version'] === null || (int) $row['summary_version'] < self::SUMMARY_VERSION) {
                 $summary = self::summaryOfManifest((string) $row['manifest_json']);
                 if (count($pending) < self::SUMMARY_FILL_LIMIT) {
                     $pending[(int) $row['id']] = $summary;
@@ -218,6 +222,7 @@ final class ReviewRepository
                     'status' => $row['analysis_status'],
                     'severity' => $row['severity'],
                     'deficit_area_frac' => $summary['deficit_area_frac'],
+                    'renewal_unrenewed_frac' => $summary['renewal_unrenewed_frac'],
                 ],
                 'argon_snapshot' => [
                     'channels' => $summary['channels'],
@@ -261,14 +266,17 @@ final class ReviewRepository
             $statement = $this->database->prepare(
                 'UPDATE publications
                     SET summary_version = :version, deficit_area_frac = :deficit,
+                        renewal_unrenewed_frac = :unrenewed,
                         argon_combined_value = :combined_value, argon_combined_state = :combined_state,
                         argon_units = :units, argon_channels_json = :channels, preview_sha256 = :preview
-                  WHERE id = :id AND summary_version IS NULL'
+                  WHERE id = :id AND (summary_version IS NULL OR summary_version < :current)'
             );
             foreach ($summaries as $id => $summary) {
                 $statement->execute([
                     'version' => self::SUMMARY_VERSION,
+                    'current' => self::SUMMARY_VERSION,
                     'deficit' => $summary['deficit_area_frac'],
+                    'unrenewed' => $summary['renewal_unrenewed_frac'],
                     'combined_value' => $summary['combined_value'],
                     'combined_state' => $summary['combined_state'],
                     'units' => $summary['units'],
@@ -330,9 +338,15 @@ final class ReviewRepository
             ];
         }
         $units ??= is_string($combined['units'] ?? null) ? $combined['units'] : null;
+        $metrics = is_array($analysis['metrics'] ?? null) ? $analysis['metrics'] : [];
         return [
             'deficit_area_frac' => is_numeric($analysis['deficit_area_frac'] ?? null)
                 ? (float) $analysis['deficit_area_frac']
+                : null,
+            // The renewal channel reports through the generic metrics dict. A
+            // layer where it did not run has no key, and stays null.
+            'renewal_unrenewed_frac' => is_numeric($metrics['renewal_before_after_unrenewed_frac'] ?? null)
+                ? (float) $metrics['renewal_before_after_unrenewed_frac']
                 : null,
             'combined_value' => is_numeric($combined['value'] ?? null) ? (float) $combined['value'] : null,
             'combined_state' => is_string($combined['state'] ?? null) ? $combined['state'] : null,
@@ -389,6 +403,9 @@ final class ReviewRepository
         }
         return [
             'deficit_area_frac' => $row['deficit_area_frac'] === null ? null : (float) $row['deficit_area_frac'],
+            'renewal_unrenewed_frac' => $row['renewal_unrenewed_frac'] === null
+                ? null
+                : (float) $row['renewal_unrenewed_frac'],
             'combined_value' => $row['argon_combined_value'] === null
                 ? null
                 : (float) $row['argon_combined_value'],
@@ -404,6 +421,7 @@ final class ReviewRepository
     {
         return [
             'deficit_area_frac' => null,
+            'renewal_unrenewed_frac' => null,
             'combined_value' => null,
             'combined_state' => null,
             'units' => null,
