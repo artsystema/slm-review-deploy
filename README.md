@@ -170,11 +170,14 @@ verbatim evidence sent by the monitor. The selected layer keeps operational
 facts visible while processor, rules, profile, and monitor-build provenance is
 available under the collapsed **Technical details** section.
 
-The Rolling Quality card also shows dark-curve observed length, span, and its
-versioned rule severity below the defect-rate plot. The selected-layer facts
-repeat those measurements so the chart cursor and evidence image can be checked
-together. The curve keeps its own axes; pixel geometry is never plotted against
-the defect percentage scale.
+Dark-curve observed length, span, and versioned rule severity have their own
+card below Rolling Quality. Argon occupies the second desktop column; the open
+lower-right cell is reserved without drawing an empty placeholder. A Curve or
+Argon card is hidden when that session never recorded the corresponding data.
+The selected-layer facts repeat curve measurements so the chart cursor and
+evidence image can be checked together. All stats stay on one row and stored
+warning/critical states are colour coded. The curve keeps its own axes; pixel
+geometry is never plotted against the defect percentage scale.
 
 All three build charts expose exact per-layer details without interpolating
 between samples. Hover with a mouse, or press and drag horizontally with a

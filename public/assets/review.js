@@ -22,6 +22,7 @@ import {
   nextFinding,
   niceTicks,
   normalizeBuild,
+  recordedChannels,
   isFlagged,
   scrollOffsetFor,
   scrubScale,
@@ -48,8 +49,8 @@ import {
 // module URLs change with it even in browsers holding an older cached copy.
 // 2026-10-14: review-core.js gained gridColumns, so its token moved again.
 // 2026-10-17: chart axis helpers and new translation keys; both tokens moved.
-// 2026-10-29: pointer/touch chart details added a core mapping helper and text.
-} from './review-core.js?v=20261029-2';
+// 2026-10-29: chart details and optional-channel visibility added core helpers.
+} from './review-core.js?v=20261029-3';
 import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261029-2';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
@@ -602,6 +603,20 @@ function renewalFact(layer) {
     ? t('renewal.confidence', { value: confidence.toFixed(2) })
     : null;
   return { value: percent(fraction), note, missing: false };
+}
+
+function thresholdTone(value, warning, critical) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '';
+  if (typeof critical === 'number' && Number.isFinite(critical) && value >= critical) return 'critical';
+  if (typeof warning === 'number' && Number.isFinite(warning) && value >= warning) return 'warning';
+  return '';
+}
+
+function severityTone(value) {
+  const token = String(value ?? '').toLowerCase();
+  if (token === 'critical' || token === 'emergency' || Number(value) >= 3) return 'critical';
+  if (token === 'warning' || Number(value) === 2) return 'warning';
+  return '';
 }
 
 function percent(value) { return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : t('unknown'); }
@@ -1762,11 +1777,22 @@ function renderSidebar() {
   // when and how the layer was processed stay as rows beneath them.
   const renewal = waiting ? { value: t('loading'), note: null, missing: false } : renewalFact(layer);
   const deficit = layer.analysis.deficit_area_frac;
+  const metrics = layer.analysis.metrics || {};
   const statValues = [
-    { label: t('fact.deficit'), value: percent(deficit), missing: typeof deficit !== 'number' },
-    { label: t('fact.unrenewed'), value: renewal.value, note: renewal.note, missing: renewal.missing },
+    {
+      label: t('fact.deficit'), value: percent(deficit), missing: typeof deficit !== 'number',
+      tone: thresholdTone(deficit, metrics.threshold_warn_area_frac, metrics.threshold_critical_area_frac),
+    },
+    {
+      label: t('fact.unrenewed'), value: renewal.value, note: renewal.note, missing: renewal.missing,
+      tone: thresholdTone(
+        metrics.renewal_before_after_unrenewed_frac,
+        metrics.renewal_threshold_warn_area_frac,
+        metrics.renewal_threshold_critical_area_frac,
+      ),
+    },
     { label: t('fact.confidence'), value: pending(numeric(layer.analysis.confidence)) },
-    { label: t('fact.state'), value: pending(valueLabel(layer.analysis.state)) },
+    { label: t('fact.state'), value: pending(valueLabel(layer.analysis.state)), tone: severityTone(layer.analysis.severity) },
   ];
   const curve = chosen.analysis?.dark_curve;
   if (curve && [curve.skeleton_pixels, curve.span_px, curve.severity].some(value => typeof value === 'number')) {
@@ -1775,10 +1801,11 @@ function renderSidebar() {
       typeof curve.skeleton_pixels === 'number' ? t('curve.length_value', { value: Math.round(curve.skeleton_pixels) }) : null,
       typeof curve.span_px === 'number' ? t('curve.span_value', { value: Math.round(curve.span_px) }) : null,
     ].filter(Boolean).join(' / ');
-    statValues.push({ label: t('fact.dark_curve'), value: valueLabel(severity), note: measurements || null, missing: false });
+    statValues.push({ label: t('fact.dark_curve'), value: valueLabel(severity), note: measurements || null, missing: false, tone: severityTone(curve.severity) });
   }
-  stats.innerHTML = statValues.map(({ label, value, note, missing }) => (
-    `<div class="layer-stat${missing ? ' is-missing' : ''}"><span>${escaped(label)}</span>`
+  stats.style.setProperty('--stat-count', String(statValues.length));
+  stats.innerHTML = statValues.map(({ label, value, note, missing, tone }) => (
+    `<div class="layer-stat${missing ? ' is-missing' : ''}${tone ? ` is-${tone}` : ''}"><span>${escaped(label)}</span>`
     + `<b>${escaped(value ?? t('unknown'))}</b>${note ? `<small>${escaped(note)}</small>` : ''}</div>`
   )).join('');
   const summaryValues = [
@@ -3009,6 +3036,7 @@ function legendEntry(label, color, missing = false) {
  * a shared scale one or the other would be a flat line on the floor.
  */
 function renderDefectChart() {
+  syncMetricCards();
   const surface = canvasContext('#defect-chart');
   const { context, width, height } = surface;
   const { defect, area, windowSize, eligibleCount } = series();
@@ -3045,6 +3073,8 @@ function renderDefectChart() {
 }
 
 function renderArgonChart() {
+  const availability = syncMetricCards();
+  if (!availability.argon) return;
   const surface = canvasContext('#argon-chart');
   const { context, width, height } = surface;
   const byChannel = series().argon;
@@ -3082,6 +3112,8 @@ function renderArgonChart() {
 }
 
 function renderCurveChart() {
+  const availability = syncMetricCards();
+  if (!availability.curve) return;
   const surface = canvasContext('#curve-chart');
   const { context, width, height } = surface;
   const values = series().curve;
@@ -3111,6 +3143,18 @@ function renderCurveChart() {
   drawLine(context, values.span, frame, frame.lanes[0], colors.span);
   drawLine(context, values.severity, frame, frame.lanes[1], colors.severity);
   keepChartBase('#curve-chart', surface, frame);
+}
+
+function syncMetricCards() {
+  const { argon, curve } = recordedChannels(state.layers);
+  el('argon-chart-card').hidden = !argon;
+  el('curve-chart-card').hidden = !curve;
+  const argonPanel = document.querySelector('.argon-panel');
+  if (argonPanel) argonPanel.hidden = !argon;
+  el('metrics-grid').dataset.layout = argon
+    ? (curve ? 'quality-curve-argon' : 'quality-argon')
+    : (curve ? 'quality-curve' : 'quality-only');
+  return { argon, curve };
 }
 
 function tooltipValue(value, formatter) {

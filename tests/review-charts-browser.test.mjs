@@ -43,6 +43,10 @@ const layers = Array.from({ length: 600 }, (_, position) => {
       },
       reason: flagged ? 'deficit 0.60% at or above 0.40%' : 'deficit 0.03% below 2.00%',
       metrics: renewal ? {
+        threshold_warn_area_frac: 0.004,
+        threshold_critical_area_frac: 0.007,
+        renewal_threshold_warn_area_frac: 0.004,
+        renewal_threshold_critical_area_frac: 0.005,
         renewal_before_after_unrenewed_frac: flagged ? 0.006 : 0.0001,
         renewal_before_after_confidence: 0.9,
         dark_curve_skeleton_pixels: flagged ? 180 + (position % 20) : 0,
@@ -72,6 +76,7 @@ function json(response, body) {
 test('selected-layer stats are tiles and the build charts line up with labelled axes', { skip: !existsSync(browserPath) }, async () => {
   const rendered = spawnSync('php', [join(import.meta.dirname, 'chamber-panel.test.php'), '--render'], { encoding: 'utf8' });
   assert.equal(rendered.status, 0, rendered.stderr);
+  let suppliedLayers = layers;
   const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
     if (url.pathname === '/') {
@@ -84,12 +89,12 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
       return;
     }
     if (url.pathname === '/api/v1/layers/index') {
-      json(response, { layers: layers.map(({ media, run, monitor_software_version, ...rest }) => ({ ...rest, analysis: { status: rest.analysis.status, severity: rest.analysis.severity, deficit_area_frac: rest.analysis.deficit_area_frac, renewal_unrenewed_frac: rest.analysis.renewal_unrenewed_frac, dark_curve: rest.analysis.dark_curve } })), truncated: false, latest_id: layers.length, session: null, build: null });
+      json(response, { layers: suppliedLayers.map(({ media, run, monitor_software_version, ...rest }) => ({ ...rest, analysis: { status: rest.analysis.status, severity: rest.analysis.severity, deficit_area_frac: rest.analysis.deficit_area_frac, renewal_unrenewed_frac: rest.analysis.renewal_unrenewed_frac, dark_curve: rest.analysis.dark_curve } })), truncated: false, latest_id: suppliedLayers.length, session: null, build: null });
       return;
     }
     if (url.pathname === '/api/v1/layers') {
       const ids = new Set((url.searchParams.get('ids') || '').split(',').filter(Boolean).map(Number));
-      json(response, { layers: layers.filter(layer => ids.has(layer.id)), session: null });
+      json(response, { layers: suppliedLayers.filter(layer => ids.has(layer.id)), session: null });
       return;
     }
     if (url.pathname.startsWith('/assets/') && /^\/assets\/[a-z0-9.-]+$/.test(url.pathname)) {
@@ -117,6 +122,9 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
       const stats = page.locator('#layer-stats .layer-stat');
       assert.equal(await stats.count(), 5);
       assert.deepEqual(await stats.locator('span').allTextContents(), ['Deficit area', 'Unrenewed', 'Confidence', 'State', 'Dark curve']);
+      const statBoxes = await stats.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect()));
+      assert.ok(statBoxes.every(box => Math.abs(box.y - statBoxes[0].y) < 1), 'layer stats stay on one row');
+      assert.equal(await page.locator('#layer-stats').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'the stats row fits its panel');
       assert.equal(await stats.nth(1).locator('b').textContent(), '0.01%');
       assert.equal(await stats.nth(1).locator('small').textContent(), 'conf 0.90');
       await page.locator('#delete-session-open').click();
@@ -131,13 +139,19 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
 
       assert.deepEqual(await page.locator('#defect-legend span').allTextContents(), ['Defect rate', 'Deficit area', 'Unrenewed']);
       assert.deepEqual(await page.locator('#curve-legend span').allTextContents(), ['Observed length', 'Span', 'Rule severity']);
-      assert.equal(await page.locator('.quality-chart-card #curve-chart').count(), 1, 'curve chart belongs to rolling quality');
-      assert.equal(await page.locator('.metrics-grid > .curve-chart-card').count(), 0, 'no separate curve card remains');
+      assert.equal(await page.locator('.quality-chart-card #curve-chart').count(), 0, 'curve chart is not nested in rolling quality');
+      assert.equal(await page.locator('.metrics-grid > .curve-chart-card').count(), 1, 'curve chart has its own card');
+      assert.equal(await page.locator('#curve-chart-card').isVisible(), true);
+      assert.equal(await page.locator('#argon-chart-card').isVisible(), true);
       const defect = await page.locator('#defect-chart').boundingBox();
       const argon = await page.locator('#argon-chart').boundingBox();
+      const curve = await page.locator('#curve-chart').boundingBox();
       if (width > 760) {
         assert.ok(Math.abs(defect.y - argon.y) < 1, `chart canvases start level: ${defect.y} vs ${argon.y}`);
         assert.ok(Math.abs(defect.height - argon.height) < 1, 'chart canvases are the same height');
+        assert.ok(Math.abs(defect.x - curve.x) < 1, 'rolling and curve cards form the first desktop column');
+        assert.ok(curve.y > defect.y + defect.height, 'curve card sits below rolling quality');
+        assert.ok(argon.x > defect.x + defect.width, 'argon occupies the second desktop column');
       }
       // Something was drawn in the gutter (tick labels) and along the bottom (layer numbers).
       const inked = await page.evaluate(() => ['#defect-chart', '#argon-chart', '#curve-chart'].map(id => {
@@ -156,7 +170,6 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
       await page.mouse.move(argon.x + argon.width * 0.55, argon.y + argon.height * 0.45);
       await page.locator('#argon-chart-tooltip:not([hidden])').waitFor();
       assert.match(await page.locator('#argon-chart-tooltip').textContent(), /Layer \d+.*CH 1.*CH 2/s);
-      const curve = await page.locator('#curve-chart').boundingBox();
       await page.mouse.move(curve.x + curve.width * 0.55, curve.y + curve.height * 0.45);
       await page.locator('#curve-chart-tooltip:not([hidden])').waitFor();
       assert.match(await page.locator('#curve-chart-tooltip').textContent(), /Layer \d+.*Observed length.*Span.*Rule severity/s);
@@ -181,6 +194,29 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
       assert.deepEqual(pageErrors, []);
       await page.close();
     }
+    const flaggedPage = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+    await flaggedPage.goto(`http://127.0.0.1:${server.address().port}/#m=${monitor}&s=4&r=4&l=2065`);
+    await flaggedPage.locator('#layer-title', { hasText: 'Layer 2065' }).waitFor();
+    await flaggedPage.locator('#layer-stats .layer-stat.is-critical').waitFor();
+    assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(0).getAttribute('class'), 'layer-stat is-warning');
+    assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(1).getAttribute('class'), 'layer-stat is-critical');
+    assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(4).getAttribute('class'), 'layer-stat is-warning');
+    await flaggedPage.close();
+
+    suppliedLayers = layers.map(layer => ({
+      ...layer,
+      analysis: { ...layer.analysis, dark_curve: null },
+      argon_snapshot: { channels: [], combined: {} },
+    }));
+    const oldPage = await browser.newPage({ viewport: { width: 1200, height: 1100 } });
+    await oldPage.goto(`http://127.0.0.1:${server.address().port}/`);
+    await oldPage.locator('#layer-title', { hasText: 'Layer 2354' }).waitFor();
+    assert.equal(await oldPage.locator('#argon-chart-card').isVisible(), false);
+    assert.equal(await oldPage.locator('#curve-chart-card').isVisible(), false);
+    assert.equal(await oldPage.locator('.argon-panel').isVisible(), false);
+    assert.equal(await oldPage.locator('#metrics-grid').getAttribute('data-layout'), 'quality-only');
+    assert.equal(await oldPage.locator('#layer-stats .layer-stat').count(), 4);
+    await oldPage.close();
   } finally {
     await browser?.close();
     await new Promise(resolveClose => server.close(resolveClose));

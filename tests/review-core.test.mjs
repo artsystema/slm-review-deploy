@@ -28,6 +28,7 @@ import {
   layerNearestBuildFraction,
   layerTicks,
   normalizeBuild,
+  recordedChannels,
   isWholeBuild,
   loadedColumns,
   longPauses,
@@ -141,6 +142,24 @@ describe('curveSeries', () => {
       span: [181, null, null],
       severity: [2, 3, null],
     });
+  });
+});
+
+describe('recordedChannels', () => {
+  it('hides optional cards until their channel was actually recorded', () => {
+    assert.deepEqual(recordedChannels([layer()]), { argon: false, curve: false });
+    assert.deepEqual(recordedChannels([
+      layer({
+        analysis: { dark_curve: { skeleton_pixels: 0, span_px: 0, severity: 0 } },
+        argon_snapshot: { channels: [{ channel: 1, value: null, reading_status: 'unreadable' }] },
+      }),
+    ]), { argon: true, curve: true });
+    assert.deepEqual(recordedChannels([
+      layer({ argon_snapshot: { channels: [{ channel: 1, value: 7.2, reading_status: 'ok' }] } }),
+    ]), { argon: true, curve: false });
+    assert.deepEqual(recordedChannels([
+      layer({ argon_snapshot: { channels: [], combined: { value: 7.2, state: 'complete' } } }),
+    ]), { argon: true, curve: false });
   });
 });
 
