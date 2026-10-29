@@ -1186,7 +1186,12 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 .argon-runway[data-state="muted"] { color: var(--text-dim); }
 
 .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.curve-chart-card { grid-column: 1 / -1; }
+.embedded-curve-chart {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.embedded-curve-chart h3 { margin: 0; font-size: 16px; }
 .session-maintenance {
   display: flex;
   align-items: center;
