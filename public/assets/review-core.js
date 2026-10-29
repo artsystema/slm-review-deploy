@@ -114,6 +114,20 @@ export function areaSeries(layers) {
   };
 }
 
+/**
+ * Dark-curve geometry and rule severity aligned to the session timeline.
+ * Missing channel data stays null so sessions predating the detector show a
+ * gap instead of a fabricated zero-length curve.
+ */
+export function curveSeries(layers) {
+  const finite = value => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+  return {
+    length: layers.map(layer => finite(layer.analysis?.dark_curve?.skeleton_pixels)),
+    span: layers.map(layer => finite(layer.analysis?.dark_curve?.span_px)),
+    severity: layers.map(layer => finite(layer.analysis?.dark_curve?.severity)),
+  };
+}
+
 /** The 1, 2, 5 step at or above `rough`, for axis ticks. */
 function niceStep(rough) {
   if (!(rough > 0) || !Number.isFinite(rough)) return 1;

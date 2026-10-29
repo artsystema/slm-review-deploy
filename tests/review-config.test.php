@@ -26,6 +26,9 @@ try {
         || $matches[1] !== $default) {
         throw new RuntimeException('server and browser review defaults differ');
     }
+    if (Config::load($root)->sessionDeleteToken() !== null) {
+        throw new RuntimeException('session deletion was enabled without a private token');
+    }
     $values['review_token'] = 'short';
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
     try {
@@ -45,6 +48,21 @@ try {
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
     if (Config::load($root)->reviewToken() !== $values['review_token']) {
         throw new RuntimeException('configured review token was lost');
+    }
+    $values['session_delete_token'] = 'short';
+    file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
+    try {
+        Config::load($root);
+        throw new RuntimeException('short session deletion token was accepted');
+    } catch (RuntimeException $error) {
+        if ($error->getMessage() !== 'session_delete_token must be a long random secret or null') {
+            throw $error;
+        }
+    }
+    $values['session_delete_token'] = str_repeat('d', 64);
+    file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
+    if (Config::load($root)->sessionDeleteToken() !== $values['session_delete_token']) {
+        throw new RuntimeException('configured session deletion token was lost');
     }
     $values['chamber_stream_url'] = 'https://live.example.com/chamber/player.html';
     file_put_contents($file, '<?php return ' . var_export($values, true) . ';');

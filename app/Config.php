@@ -51,6 +51,10 @@ final class Config
             && (!is_string($values['review_token']) || strlen($values['review_token']) < 32)) {
             throw new RuntimeException('review_token must be a long random secret');
         }
+        if (array_key_exists('session_delete_token', $values) && $values['session_delete_token'] !== null
+            && (!is_string($values['session_delete_token']) || strlen($values['session_delete_token']) < 32)) {
+            throw new RuntimeException('session_delete_token must be a long random secret or null');
+        }
         foreach (['max_manifest_bytes', 'max_media_bytes'] as $key) {
             if (!is_int($values[$key]) || $values[$key] <= 0) {
                 throw new RuntimeException("{$key} must be a positive integer");
@@ -112,6 +116,12 @@ final class Config
         $value = $this->values['review_token'] ?? null;
         return is_string($value) && !str_starts_with($value, 'replace-with-')
             ? $value : self::DEFAULT_REVIEW_TOKEN;
+    }
+
+    public function sessionDeleteToken(): ?string
+    {
+        $value = $this->values['session_delete_token'] ?? null;
+        return is_string($value) && !str_starts_with($value, 'replace-with-') ? $value : null;
     }
 
     public function maxManifestBytes(): int

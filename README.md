@@ -86,7 +86,8 @@ paths are examples only; substitute the cPanel account's actual home path.
    `migrations/004_layer_summary.sql`, then `migrations/005_run_mode.sql`,
    then `migrations/006_job_descriptor.sql`, then `migrations/007_session_ends.sql`,
    then `migrations/008_layer_reviews.sql`, then
-   `migrations/009_layer_summary_renewal.sql`,
+   `migrations/009_layer_summary_renewal.sql`, then
+   `migrations/010_layer_summary_dark_curve.sql`,
    with phpMyAdmin into the new database.
    Later migrations are required when upgrading an existing install:
    002 adds the index behind the build-ordered timeline, 003 records which
@@ -104,7 +105,10 @@ paths are examples only; substitute the cPanel account's actual home path.
    area to the session index, and without it both the timeline request and
    every ingest fail on the missing column. Like 004 it needs no backfill;
    rows summarised before it are re-read from their manifests, a bounded
-   number per request.
+   number per request. Import 010 before deploying the code that reads it: it
+   adds dark-curve length, span, and rule severity for the session chart. Old
+   publications are likewise backfilled from immutable manifests in bounded
+   batches; a bundle that predates the detector stays missing rather than zero.
 
    **Deploy this service before the monitor that sends `run.mode`.** The
    validator accepts the field as optional, so a reviewer updated first is happy
@@ -165,6 +169,35 @@ dates, and generated summaries; processor-supplied reason text remains the
 verbatim evidence sent by the monitor. The selected layer keeps operational
 facts visible while processor, rules, profile, and monitor-build provenance is
 available under the collapsed **Technical details** section.
+
+The lower chart area also shows dark-curve observed length, span, and its
+versioned rule severity. The selected-layer facts repeat those measurements so
+the chart cursor and evidence image can be checked together.
+
+## Deleting an ended remote session
+
+The bottom of the main viewer offers **Delete this ended test session** for a
+named session with a delivered end marker. This works for older ended sessions
+as well as new ones after deployment; there is no new per-session metadata to
+retrofit. It removes only the remote review copy, its review events, and media
+objects that no other publication uses. Local monitor layers, outbox bundles,
+and the sync ledger are unchanged.
+
+Deletion is disabled until private `config.php` defines a separate random
+secret of at least 32 characters:
+
+```php
+'session_delete_token' => 'replace-with-a-new-long-random-secret',
+```
+
+Do not reuse the ingest or review token. The dialog requires the exact session
+name, the private deletion token, the currently displayed layer count, an ended
+session, and a same-origin action header. A count change aborts the request so
+the operator must reload before deleting late publications. Deletion is final
+on this server: the monitor sync ledger considers accepted bundles delivered
+and does not automatically republish them. Back up MySQL before removing any
+record that must remain auditable. `tools/delete-session.sql` remains a manual
+recovery procedure, not the normal interface.
 
 ## Session end delivery
 

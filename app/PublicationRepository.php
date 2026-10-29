@@ -193,6 +193,8 @@ final class PublicationRepository
             'UPDATE publications
                 SET summary_version = :version, deficit_area_frac = :deficit,
                     renewal_unrenewed_frac = :unrenewed,
+                    dark_curve_skeleton_pixels = :curve_pixels,
+                    dark_curve_span_px = :curve_span, dark_curve_severity = :curve_severity,
                     argon_combined_value = :combined_value, argon_combined_state = :combined_state,
                     argon_units = :units, argon_channels_json = :channels, preview_sha256 = :preview
               WHERE id = :id'
@@ -201,6 +203,9 @@ final class PublicationRepository
             'version' => ReviewRepository::SUMMARY_VERSION,
             'deficit' => $summary['deficit_area_frac'],
             'unrenewed' => $summary['renewal_unrenewed_frac'],
+            'curve_pixels' => $summary['dark_curve_skeleton_pixels'],
+            'curve_span' => $summary['dark_curve_span_px'],
+            'curve_severity' => $summary['dark_curve_severity'],
             'combined_value' => $summary['combined_value'],
             'combined_state' => $summary['combined_state'],
             'units' => $summary['units'],

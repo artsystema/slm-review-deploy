@@ -14,6 +14,7 @@ final class Application
         private SessionEndRepository $sessionEnds,
         private ReviewRepository $review,
         private LayerReviewRepository $layerReviews,
+        private SessionDeletionRepository $sessionDeletion,
         private MediaStore $mediaStore,
     ) {
     }
@@ -30,6 +31,7 @@ final class Application
             new SessionEndRepository($database),
             new ReviewRepository($database),
             new LayerReviewRepository($database),
+            new SessionDeletionRepository($database, $mediaStore),
             $mediaStore,
         );
         try {
@@ -101,6 +103,15 @@ final class Application
         }
         if ($method === 'GET' && $path === '/api/v1/sessions') {
             Response::json(200, ['sessions' => $this->review->sessions(self::limit($request, 50, 1, 100))]);
+        }
+        if ($method === 'DELETE' && $path === '/api/v1/sessions') {
+            if ($request->header('X-SLM-Session-Delete-Action') !== '1'
+                || $request->header('Sec-Fetch-Site') === 'cross-site') {
+                throw new HttpError(403, 'same-origin session deletion is required');
+            }
+            $this->requireSessionDeleteToken($request);
+            $body = $request->jsonBody(2048);
+            Response::json(200, $this->sessionDeletion->delete($body['value']));
         }
         if ($method === 'GET' && $path === '/api/v1/reviews') {
             $this->requireReviewToken($request);
@@ -246,6 +257,21 @@ final class Application
         }
         if (!hash_equals($configured, substr($authorization, 7))) {
             throw new HttpError(403, 'review authorization is invalid');
+        }
+    }
+
+    private function requireSessionDeleteToken(Request $request): void
+    {
+        $configured = $this->config->sessionDeleteToken();
+        if ($configured === null) {
+            throw new HttpError(503, 'session deletion is not configured');
+        }
+        $authorization = $request->header('X-SLM-Session-Delete-Authorization');
+        if (!is_string($authorization) || !str_starts_with($authorization, 'Bearer ')) {
+            throw new HttpError(401, 'session deletion authorization is required');
+        }
+        if (!hash_equals($configured, substr($authorization, 7))) {
+            throw new HttpError(403, 'session deletion authorization is invalid');
         }
     }
 
@@ -537,7 +563,22 @@ final class Application
       <section class="metrics-grid">
         <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="quality.eyebrow">ROLLING QUALITY</p><h2 data-i18n="quality.title">Defect rate</h2></div><strong id="defect-rate">--</strong></div><div id="defect-legend" class="chart-legend"></div><canvas id="defect-chart" height="168" aria-label="Rolling defect rate chart" data-i18n-aria="quality.aria"></canvas><p id="defect-note" class="chart-note"></p></article>
         <article class="panel chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="argon_chart.eyebrow">CAPTURED WITH LAYER</p><h2 data-i18n="argon_chart.title">Argon channels</h2></div><strong id="argon-label">--</strong></div><div id="argon-legend" class="chart-legend"></div><canvas id="argon-chart" height="168" aria-label="Argon snapshot chart" data-i18n-aria="argon_chart.aria"></canvas><p class="chart-note" data-i18n="argon_chart.note">Values are never interpolated. On a build longer than this chart is wide, each pixel column shows the highest and lowest reading in it, and becomes a gap only where the whole column was unreadable.</p></article>
+        <article class="panel chart-card curve-chart-card"><div class="chart-heading"><div><p class="eyebrow" data-i18n="curve_chart.eyebrow">SURFACE EVIDENCE</p><h2 data-i18n="curve_chart.title">Dark curve</h2></div><strong id="curve-label">--</strong></div><div id="curve-legend" class="chart-legend"></div><canvas id="curve-chart" height="168" aria-label="Dark curve evidence chart" data-i18n-aria="curve_chart.aria"></canvas><p class="chart-note" data-i18n="curve_chart.note">Observed centerline length and span are measurements; severity is the versioned curve rule result.</p></article>
       </section>
+      <section class="session-maintenance" aria-label="Session storage" data-i18n-aria="delete.aria">
+        <button id="delete-session-open" class="danger-button" type="button" data-i18n="delete.open" hidden>Delete this ended test session</button>
+        <p data-i18n="delete.explainer">Deletion removes this remote copy and unshared media. It does not delete monitor data.</p>
+      </section>
+      <dialog id="delete-session-dialog" class="delete-session-dialog">
+        <form id="delete-session-form">
+          <h2 data-i18n="delete.title">Delete remote session</h2>
+          <p id="delete-session-description"></p>
+          <label><span data-i18n="delete.confirm_label">Retype the exact session name</span><input id="delete-session-confirmation" type="text" autocomplete="off" required></label>
+          <label><span data-i18n="delete.token_label">Private deletion token</span><input id="delete-session-token" type="password" autocomplete="off" required></label>
+          <p id="delete-session-status" class="delete-session-status" role="status" aria-live="polite"></p>
+          <div class="delete-session-actions"><button id="delete-session-cancel" type="button" data-i18n="delete.cancel">Cancel</button><button id="delete-session-confirm" class="danger-button" type="submit" data-i18n="delete.confirm">Delete remote session</button></div>
+        </form>
+      </dialog>
     </main>
   </div>
   <script src="{{asset:review.js}}" type="module"></script>

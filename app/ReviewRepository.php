@@ -10,9 +10,9 @@ use PDOStatement;
 final class ReviewRepository
 {
     /** The shape `summary_version` marks a row as having been written in.
-     *  2 added `renewal_unrenewed_frac` (migration 009); rows at an older
+     *  3 adds dark-curve geometry/severity (migration 010); rows at an older
      *  version are re-summarised from their manifest like unsummarised ones. */
-    public const SUMMARY_VERSION = 2;
+    public const SUMMARY_VERSION = 3;
 
     /** At most this many rows are summarised on any one read, so a first
      *  request against a long history cannot run past the execution limit.
@@ -179,6 +179,7 @@ final class ReviewRepository
     ): array {
         $sql = 'SELECT p.id, p.run_local_id, p.run_mode, p.layer_index, p.captured_at, p.analysis_status,
                        p.severity, p.summary_version, p.deficit_area_frac, p.renewal_unrenewed_frac,
+                       p.dark_curve_skeleton_pixels, p.dark_curve_span_px, p.dark_curve_severity,
                        p.argon_combined_value, p.argon_combined_state, p.argon_units, p.argon_channels_json,
                        p.preview_sha256,
                        CASE WHEN p.summary_version IS NULL OR p.summary_version < ' . self::SUMMARY_VERSION . '
@@ -223,6 +224,11 @@ final class ReviewRepository
                     'severity' => $row['severity'],
                     'deficit_area_frac' => $summary['deficit_area_frac'],
                     'renewal_unrenewed_frac' => $summary['renewal_unrenewed_frac'],
+                     'dark_curve' => [
+                         'skeleton_pixels' => $summary['dark_curve_skeleton_pixels'],
+                         'span_px' => $summary['dark_curve_span_px'],
+                         'severity' => $summary['dark_curve_severity'],
+                     ],
                 ],
                 'argon_snapshot' => [
                     'channels' => $summary['channels'],
@@ -267,6 +273,8 @@ final class ReviewRepository
                 'UPDATE publications
                     SET summary_version = :version, deficit_area_frac = :deficit,
                         renewal_unrenewed_frac = :unrenewed,
+                        dark_curve_skeleton_pixels = :curve_pixels,
+                        dark_curve_span_px = :curve_span, dark_curve_severity = :curve_severity,
                         argon_combined_value = :combined_value, argon_combined_state = :combined_state,
                         argon_units = :units, argon_channels_json = :channels, preview_sha256 = :preview
                   WHERE id = :id AND (summary_version IS NULL OR summary_version < :current)'
@@ -277,6 +285,9 @@ final class ReviewRepository
                     'current' => self::SUMMARY_VERSION,
                     'deficit' => $summary['deficit_area_frac'],
                     'unrenewed' => $summary['renewal_unrenewed_frac'],
+                    'curve_pixels' => $summary['dark_curve_skeleton_pixels'],
+                    'curve_span' => $summary['dark_curve_span_px'],
+                    'curve_severity' => $summary['dark_curve_severity'],
                     'combined_value' => $summary['combined_value'],
                     'combined_state' => $summary['combined_state'],
                     'units' => $summary['units'],
@@ -348,6 +359,15 @@ final class ReviewRepository
             'renewal_unrenewed_frac' => is_numeric($metrics['renewal_before_after_unrenewed_frac'] ?? null)
                 ? (float) $metrics['renewal_before_after_unrenewed_frac']
                 : null,
+            'dark_curve_skeleton_pixels' => is_numeric($metrics['dark_curve_skeleton_pixels'] ?? null)
+                ? (float) $metrics['dark_curve_skeleton_pixels']
+                : null,
+            'dark_curve_span_px' => is_numeric($metrics['dark_curve_span_px'] ?? null)
+                ? (float) $metrics['dark_curve_span_px']
+                : null,
+            'dark_curve_severity' => is_numeric($metrics['dark_curve_severity_reported'] ?? null)
+                ? max(0, min(3, (int) round((float) $metrics['dark_curve_severity_reported'])))
+                : null,
             'combined_value' => is_numeric($combined['value'] ?? null) ? (float) $combined['value'] : null,
             'combined_state' => is_string($combined['state'] ?? null) ? $combined['state'] : null,
             'units' => $units,
@@ -406,6 +426,15 @@ final class ReviewRepository
             'renewal_unrenewed_frac' => $row['renewal_unrenewed_frac'] === null
                 ? null
                 : (float) $row['renewal_unrenewed_frac'],
+            'dark_curve_skeleton_pixels' => $row['dark_curve_skeleton_pixels'] === null
+                ? null
+                : (float) $row['dark_curve_skeleton_pixels'],
+            'dark_curve_span_px' => $row['dark_curve_span_px'] === null
+                ? null
+                : (float) $row['dark_curve_span_px'],
+            'dark_curve_severity' => $row['dark_curve_severity'] === null
+                ? null
+                : (int) $row['dark_curve_severity'],
             'combined_value' => $row['argon_combined_value'] === null
                 ? null
                 : (float) $row['argon_combined_value'],
@@ -422,6 +451,9 @@ final class ReviewRepository
         return [
             'deficit_area_frac' => null,
             'renewal_unrenewed_frac' => null,
+            'dark_curve_skeleton_pixels' => null,
+            'dark_curve_span_px' => null,
+            'dark_curve_severity' => null,
             'combined_value' => null,
             'combined_state' => null,
             'units' => null,
