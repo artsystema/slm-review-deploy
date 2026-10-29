@@ -128,6 +128,22 @@ export function curveSeries(layers) {
   };
 }
 
+/** Whether optional session-wide charts have at least one recorded value. */
+export function recordedChannels(layers) {
+  // A channel of explicit unreadable samples was still recorded and must stay
+  // visible as missing evidence; only a session with no channel rows is hidden.
+  const argon = layers.some(layer => (layer.argon_snapshot?.channels?.length ?? 0) > 0
+    || (typeof layer.argon_snapshot?.combined?.value === 'number'
+      && Number.isFinite(layer.argon_snapshot.combined.value)));
+  const curve = curveSeries(layers);
+  return {
+    argon,
+    curve: curve.length.some(value => value != null)
+      || curve.span.some(value => value != null)
+      || curve.severity.some(value => value != null),
+  };
+}
+
 /**
  * Nearest real layer position under a chart pointer.
  *

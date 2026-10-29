@@ -1002,33 +1002,39 @@ body.chamber-lightbox-active { overflow: hidden; }
 
 /* The selected layer's measurements, as the monitor's defect-stat tiles: a
    small label over the value, each in its own bordered cell. */
-.layer-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.layer-stats {
+  display: grid;
+  grid-template-columns: repeat(var(--stat-count, 4), minmax(0, 1fr));
+  gap: 3px;
+}
 .layer-stat {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px;
+  padding: 5px 4px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--panel-2);
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 9px;
 }
 .layer-stat b {
   overflow: hidden;
   color: var(--text);
-  font-size: 15px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.layer-stat small { color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.layer-stat small { overflow: hidden; color: var(--text-dim); font-size: 9px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.layer-stat > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layer-stat.is-missing b { color: var(--warn); font-size: 12px; font-weight: 500; }
-@media (min-width: 1480px), (min-width: 431px) and (max-width: 760px) {
-  .layer-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
+.layer-stat.is-warning { border-color: rgb(224 166 58 / 55%); background: rgb(224 166 58 / 12%); }
+.layer-stat.is-warning b { color: var(--warn); }
+.layer-stat.is-critical { border-color: rgb(224 82 58 / 60%); background: rgb(224 82 58 / 14%); }
+.layer-stat.is-critical b { color: var(--crit); }
 
 dl {
   display: grid;
@@ -1185,13 +1191,18 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
 }
 .argon-runway[data-state="muted"] { color: var(--text-dim); }
 
-.metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.embedded-curve-chart {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas: "quality argon" "curve .";
+  gap: 10px;
 }
-.embedded-curve-chart h3 { margin: 0; font-size: 16px; }
+.quality-chart-card { grid-area: quality; }
+.curve-chart-card { grid-area: curve; }
+.argon-chart-card { grid-area: argon; }
+.metrics-grid[data-layout="quality-curve"] { grid-template-areas: "quality quality" "curve curve"; }
+.metrics-grid[data-layout="quality-argon"] { grid-template-areas: "quality argon"; }
+.metrics-grid[data-layout="quality-only"] { grid-template-areas: "quality quality"; }
 .session-maintenance {
   display: flex;
   align-items: center;
@@ -1412,7 +1423,10 @@ dd { max-width: 190px; margin: 0; overflow-wrap: anywhere; text-align: right; fo
   .session-picker select { width: 100%; min-width: 0; }
   .review-shell { padding: 8px 10px 18px; }
   .selected-grid,
-  .metrics-grid { grid-template-columns: 1fr; }
+  .metrics-grid { grid-template-columns: 1fr; grid-template-areas: "quality" "curve" "argon"; }
+  .metrics-grid[data-layout="quality-curve"] { grid-template-areas: "quality" "curve"; }
+  .metrics-grid[data-layout="quality-argon"] { grid-template-areas: "quality" "argon"; }
+  .metrics-grid[data-layout="quality-only"] { grid-template-areas: "quality"; }
   .selected-grid { grid-template-areas: "chamber" "viewer" "details"; grid-template-rows: auto; }
   .chamber-media { max-height: 56vh; }
   .chamber-live.is-lightbox { inset: 2vh 2vw; width: 96vw; height: 96vh; }
