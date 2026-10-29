@@ -150,6 +150,30 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
         return [any(gutter), any(floor)];
       }));
       assert.deepEqual(inked, [[true, true], [true, true], [true, true]], 'all charts carry axis labels');
+      await page.mouse.move(defect.x + defect.width * 0.55, defect.y + defect.height * 0.45);
+      await page.locator('#defect-chart-tooltip:not([hidden])').waitFor();
+      assert.match(await page.locator('#defect-chart-tooltip').textContent(), /Layer \d+.*Defect rate.*Deficit area.*Unrenewed/s);
+      await page.mouse.move(argon.x + argon.width * 0.55, argon.y + argon.height * 0.45);
+      await page.locator('#argon-chart-tooltip:not([hidden])').waitFor();
+      assert.match(await page.locator('#argon-chart-tooltip').textContent(), /Layer \d+.*CH 1.*CH 2/s);
+      const curve = await page.locator('#curve-chart').boundingBox();
+      await page.mouse.move(curve.x + curve.width * 0.55, curve.y + curve.height * 0.45);
+      await page.locator('#curve-chart-tooltip:not([hidden])').waitFor();
+      assert.match(await page.locator('#curve-chart-tooltip').textContent(), /Layer \d+.*Observed length.*Span.*Rule severity/s);
+      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      await page.locator('#curve-chart-tooltip:not([hidden])').waitFor();
+      assert.match(await page.locator('#curve-chart-tooltip').textContent(), /Observed length.*Rule severity/s, 'tooltip survives a live redraw');
+      if (width === 390) {
+        await page.mouse.move(1, 1);
+        await page.locator('#curve-chart').dispatchEvent('pointerdown', {
+          pointerId: 17, pointerType: 'touch', clientX: curve.x + curve.width * 0.6, clientY: curve.y + curve.height * 0.5,
+        });
+        await page.locator('#curve-chart').dispatchEvent('pointerup', {
+          pointerId: 17, pointerType: 'touch', clientX: curve.x + curve.width * 0.6, clientY: curve.y + curve.height * 0.5,
+        });
+        await page.locator('#curve-chart-tooltip:not([hidden])').waitFor();
+        assert.match(await page.locator('#curve-chart-tooltip').textContent(), /Observed length.*Rule severity/s);
+      }
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal page scroll');
       if (process.env.REVIEW_SCREENSHOTS) {
         await page.screenshot({ path: join(process.env.REVIEW_SCREENSHOTS, `review-charts-${width}.png`), fullPage: true });

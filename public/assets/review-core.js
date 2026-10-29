@@ -128,6 +128,21 @@ export function curveSeries(layers) {
   };
 }
 
+/**
+ * Nearest real layer position under a chart pointer.
+ *
+ * Chart values are never interpolated for the tooltip: the horizontal pixel
+ * is converted back to the nearest loaded build position and that layer's
+ * stored values are shown. Values outside the plot clamp to its endpoints.
+ */
+export function chartLayerPosition(pointerX, plotLeft, plotWidth, layerCount) {
+  if (layerCount <= 0) return -1;
+  if (layerCount === 1) return 0;
+  const width = Math.max(1, plotWidth);
+  const fraction = Math.min(1, Math.max(0, (pointerX - plotLeft) / width));
+  return Math.min(layerCount - 1, Math.max(0, Math.round(fraction * (layerCount - 1))));
+}
+
 /** The 1, 2, 5 step at or above `rough`, for axis ticks. */
 function niceStep(rough) {
   if (!(rough > 0) || !Number.isFinite(rough)) return 1;

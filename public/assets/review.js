@@ -1,6 +1,7 @@
 import {
   areaSeries,
   argonSeries,
+  chartLayerPosition,
   clampWindow,
   curveSeries,
   decimate,
@@ -47,8 +48,9 @@ import {
 // module URLs change with it even in browsers holding an older cached copy.
 // 2026-10-14: review-core.js gained gridColumns, so its token moved again.
 // 2026-10-17: chart axis helpers and new translation keys; both tokens moved.
-} from './review-core.js?v=20261029';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261029';
+// 2026-10-29: pointer/touch chart details added a core mapping helper and text.
+} from './review-core.js?v=20261029-2';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261029-2';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
 const LANGUAGE_KEY = 'slm-review-language';
@@ -2828,6 +2830,7 @@ function canvasContext(id) {
 // kept beside it, because the marker has to land where the series were drawn.
 const chartBases = new Map();
 const chartFrames = new Map();
+const chartTooltips = new Map();
 
 function keepChartBase(id, surface, frame = null) {
   let base = chartBases.get(id);
@@ -2837,6 +2840,14 @@ function keepChartBase(id, surface, frame = null) {
   if (base.width && base.height) base.getContext('2d').drawImage(surface.canvas, 0, 0);
   chartFrames.set(id, frame);
   if (frame) drawSelection(surface.context, frame);
+  const held = chartTooltips.get(id);
+  if (!frame) {
+    hideChartTooltip(id);
+  } else if (held && !held.tooltip.hidden && held.layerId != null) {
+    const position = state.layers.findIndex(layer => layer.id === held.layerId);
+    if (position < 0) hideChartTooltip(id);
+    else showChartTooltip(id, surface.canvas.getBoundingClientRect().left + xAt(frame, position));
+  }
 }
 
 function drawChartSelection() {
@@ -3102,6 +3113,154 @@ function renderCurveChart() {
   keepChartBase('#curve-chart', surface, frame);
 }
 
+function tooltipValue(value, formatter) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? formatter(value)
+    : t('chart.tooltip_not_reported');
+}
+
+function chartTooltipRows(id, position) {
+  const layer = state.layers[position];
+  if (!layer) return null;
+  const derived = series();
+  const rows = [];
+  if (id === '#defect-chart') {
+    rows.push(
+      { label: t('quality.legend_rate'), value: tooltipValue(derived.defect[position], percent), color: cssColor('--accent') },
+      { label: t('fact.deficit'), value: tooltipValue(derived.area.deficit[position], percent), color: cssColor('--series-deficit') },
+      { label: t('fact.unrenewed'), value: tooltipValue(derived.area.unrenewed[position], percent), color: cssColor('--series-unrenewed') },
+    );
+  } else if (id === '#argon-chart') {
+    for (const channel of [...derived.argon.keys()].sort((left, right) => left - right)) {
+      const value = derived.argon.get(channel)?.[position];
+      rows.push({
+        label: t('argon_chart.channel', { channel }),
+        value: tooltipValue(value, reading => `${numeric(reading)} ${derived.units}`.trim()),
+        color: channelColors[(channel - 1) % channelColors.length],
+      });
+    }
+  } else if (id === '#curve-chart') {
+    const severity = derived.curve.severity[position];
+    rows.push(
+      { label: t('curve_chart.length'), value: tooltipValue(derived.curve.length[position], value => `${Math.round(value)} px`), color: cssColor('--series-curve-length') },
+      { label: t('curve_chart.span'), value: tooltipValue(derived.curve.span[position], value => `${Math.round(value)} px`), color: cssColor('--series-curve-span') },
+      {
+        label: t('curve_chart.severity'),
+        value: tooltipValue(severity, value => valueLabel(['none', 'info', 'warning', 'critical'][Math.max(0, Math.min(3, Math.round(value)))])),
+        color: cssColor('--series-curve-severity'),
+      },
+    );
+  }
+  return {
+    title: t('chart.tooltip_layer', { layer: layer.label ?? layer.index }),
+    meta: t('chart.tooltip_state', {
+      status: valueLabel(layer.analysis?.status),
+      severity: valueLabel(layer.analysis?.severity),
+    }),
+    rows,
+  };
+}
+
+function chartTooltipElements(id, canvas) {
+  let held = chartTooltips.get(id);
+  if (held) return held;
+  const card = canvas.closest('.chart-card');
+  const guide = document.createElement('i');
+  guide.className = 'chart-tooltip-guide';
+  guide.hidden = true;
+  const tooltip = document.createElement('div');
+  tooltip.className = 'chart-tooltip';
+  tooltip.id = `${canvas.id}-tooltip`;
+  tooltip.setAttribute('role', 'status');
+  tooltip.hidden = true;
+  card.append(guide, tooltip);
+  canvas.setAttribute('aria-describedby', tooltip.id);
+  held = { card, guide, tooltip, activePointer: null, position: -1, layerId: null };
+  chartTooltips.set(id, held);
+  return held;
+}
+
+function hideChartTooltip(id) {
+  const held = chartTooltips.get(id);
+  if (!held) return;
+  held.tooltip.hidden = true;
+  held.guide.hidden = true;
+  held.position = -1;
+  held.layerId = null;
+}
+
+function showChartTooltip(id, clientX) {
+  const canvas = document.querySelector(id);
+  const frame = chartFrames.get(id);
+  if (!canvas || !frame || !state.layers.length) { hideChartTooltip(id); return; }
+  const canvasBounds = canvas.getBoundingClientRect();
+  const localX = clientX - canvasBounds.left;
+  const position = chartLayerPosition(localX, frame.left, frame.plotWidth, state.layers.length);
+  const content = chartTooltipRows(id, position);
+  if (!content) { hideChartTooltip(id); return; }
+  const held = chartTooltipElements(id, canvas);
+  held.position = position;
+  held.layerId = state.layers[position].id;
+  const title = document.createElement('strong');
+  title.textContent = content.title;
+  const meta = document.createElement('small');
+  meta.textContent = content.meta;
+  const list = document.createElement('dl');
+  for (const row of content.rows) {
+    const term = document.createElement('dt');
+    const dot = document.createElement('i');
+    dot.style.setProperty('--tooltip-series', row.color);
+    term.append(dot, row.label);
+    const value = document.createElement('dd');
+    value.textContent = row.value;
+    list.append(term, value);
+  }
+  held.tooltip.replaceChildren(title, meta, list);
+  held.tooltip.hidden = false;
+  held.guide.hidden = false;
+
+  const cardBounds = held.card.getBoundingClientRect();
+  const pointX = canvasBounds.left - cardBounds.left + xAt(frame, position);
+  const plotTop = canvasBounds.top - cardBounds.top + (frame.lanes[0]?.top ?? 0);
+  held.guide.style.left = `${pointX}px`;
+  held.guide.style.top = `${plotTop}px`;
+  held.guide.style.height = `${Math.max(1, frame.bottom - (frame.lanes[0]?.top ?? 0))}px`;
+  const tooltipWidth = held.tooltip.offsetWidth;
+  let tooltipLeft = pointX + 10;
+  if (tooltipLeft + tooltipWidth > held.card.clientWidth - 5) tooltipLeft = pointX - tooltipWidth - 10;
+  held.tooltip.style.left = `${clamp(tooltipLeft, 5, Math.max(5, held.card.clientWidth - tooltipWidth - 5))}px`;
+  held.tooltip.style.top = `${Math.max(5, canvasBounds.top - cardBounds.top + 5)}px`;
+}
+
+function wireChartTooltip(id) {
+  const canvas = document.querySelector(id);
+  chartTooltipElements(id, canvas);
+  canvas.addEventListener('pointerdown', event => {
+    const held = chartTooltips.get(id);
+    held.activePointer = event.pointerId;
+    showChartTooltip(id, event.clientX);
+  });
+  canvas.addEventListener('pointermove', event => {
+    const held = chartTooltips.get(id);
+    if (event.pointerType === 'mouse' || held.activePointer === event.pointerId) {
+      showChartTooltip(id, event.clientX);
+    }
+  });
+  canvas.addEventListener('pointerup', event => {
+    const held = chartTooltips.get(id);
+    if (held.activePointer === event.pointerId) held.activePointer = null;
+    if (event.pointerType === 'mouse') hideChartTooltip(id);
+  });
+  canvas.addEventListener('pointerleave', event => {
+    if (event.pointerType === 'mouse') hideChartTooltip(id);
+  });
+  canvas.addEventListener('pointercancel', () => {
+    const held = chartTooltips.get(id);
+    held.activePointer = null;
+    hideChartTooltip(id);
+  });
+}
+
 /**
  * The units the gauges report in, from the first layer that states them.
  *
@@ -3153,6 +3312,12 @@ function drawLine(context, points, frame, lane, color, stepped = false) {
 }
 
 // ---------- wiring ----------
+
+for (const id of ['#defect-chart', '#argon-chart', '#curve-chart']) wireChartTooltip(id);
+document.addEventListener('pointerdown', event => {
+  if (event.target.closest?.('.chart-card canvas')) return;
+  for (const id of chartTooltips.keys()) hideChartTooltip(id);
+});
 
 select.addEventListener('change', () => {
   updateDeleteControl();
