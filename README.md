@@ -170,9 +170,11 @@ verbatim evidence sent by the monitor. The selected layer keeps operational
 facts visible while processor, rules, profile, and monitor-build provenance is
 available under the collapsed **Technical details** section.
 
-The lower chart area also shows dark-curve observed length, span, and its
-versioned rule severity. The selected-layer facts repeat those measurements so
-the chart cursor and evidence image can be checked together.
+The Rolling Quality card also shows dark-curve observed length, span, and its
+versioned rule severity below the defect-rate plot. The selected-layer facts
+repeat those measurements so the chart cursor and evidence image can be checked
+together. The curve keeps its own axes; pixel geometry is never plotted against
+the defect percentage scale.
 
 ## Deleting an ended remote session
 

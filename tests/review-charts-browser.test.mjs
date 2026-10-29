@@ -131,6 +131,8 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
 
       assert.deepEqual(await page.locator('#defect-legend span').allTextContents(), ['Defect rate', 'Deficit area', 'Unrenewed']);
       assert.deepEqual(await page.locator('#curve-legend span').allTextContents(), ['Observed length', 'Span', 'Rule severity']);
+      assert.equal(await page.locator('.quality-chart-card #curve-chart').count(), 1, 'curve chart belongs to rolling quality');
+      assert.equal(await page.locator('.metrics-grid > .curve-chart-card').count(), 0, 'no separate curve card remains');
       const defect = await page.locator('#defect-chart').boundingBox();
       const argon = await page.locator('#argon-chart').boundingBox();
       if (width > 760) {
