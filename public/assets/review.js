@@ -2,6 +2,7 @@ import {
   areaSeries,
   argonSeries,
   clampWindow,
+  curveSeries,
   decimate,
   defectRateSeries,
   elapsedSeries,
@@ -46,8 +47,8 @@ import {
 // module URLs change with it even in browsers holding an older cached copy.
 // 2026-10-14: review-core.js gained gridColumns, so its token moved again.
 // 2026-10-17: chart axis helpers and new translation keys; both tokens moved.
-} from './review-core.js?v=20261017';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261017';
+} from './review-core.js?v=20261029';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261029';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
 const LANGUAGE_KEY = 'slm-review-language';
@@ -166,6 +167,12 @@ const chamberCaption = el('chamber-caption');
 const chamberEnlarge = el('chamber-lightbox-open');
 const chamberClose = el('chamber-lightbox-close');
 const chamberBackdrop = el('chamber-lightbox-backdrop');
+const deleteSessionOpen = el('delete-session-open');
+const deleteSessionDialog = el('delete-session-dialog');
+const deleteSessionForm = el('delete-session-form');
+const deleteSessionConfirmation = el('delete-session-confirmation');
+const deleteSessionToken = el('delete-session-token');
+const deleteSessionStatus = el('delete-session-status');
 const chamberPlayerUrl = chamberPlayer?.dataset.streamUrl || '';
 const basePath = window.location.pathname.replace(/\/$/, '');
 let chamberAccessRequest = null;
@@ -533,6 +540,7 @@ function setTheme(next, persist = true) {
     renderNavigator();
     renderDefectChart();
     renderArgonChart();
+    renderCurveChart();
   }
 }
 
@@ -554,8 +562,11 @@ function cssColor(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-async function api(path) {
-  const response = await fetch(`${basePath}${path}`, { headers: { Accept: 'application/json' } });
+async function api(path, options = {}) {
+  const response = await fetch(`${basePath}${path}`, {
+    ...options,
+    headers: { Accept: 'application/json', ...(options.headers || {}) },
+  });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return body;
@@ -725,6 +736,7 @@ function series() {
     windowSize,
     defect: defectRateSeries(state.layers, windowSize),
     area: areaSeries(state.layers),
+    curve: curveSeries(state.layers),
     argon: argonSeries(state.layers),
     eligibleCount,
     flaggedCount,
@@ -1042,6 +1054,7 @@ function renderSessionOptions(preserve = false) {
   select.replaceChildren();
   if (!state.sessions.length) {
     select.append(new Option(t('session.empty'), ''));
+    updateDeleteControl();
     setNotice(t('notice.empty'));
     return true;
   }
@@ -1053,8 +1066,10 @@ function renderSessionOptions(preserve = false) {
   }
   if (preserve && [...select.options].some(option => option.value === previous)) {
     select.value = previous;
+    updateDeleteControl();
     return true;
   }
+  updateDeleteControl();
   return false;
 }
 
@@ -1065,6 +1080,74 @@ function currentSelection() {
     return JSON.parse(select.value);
   } catch {
     return null;
+  }
+}
+
+function currentSessionRecord() {
+  const chosen = currentSelection();
+  return chosen === null ? null : state.sessions.find(session => (
+    session.monitor_instance_id === chosen.monitor && session.session_local_id === chosen.session
+  )) || null;
+}
+
+function updateDeleteControl() {
+  const session = currentSessionRecord();
+  deleteSessionOpen.hidden = !(session && session.session_local_id !== null
+    && typeof session.session_name === 'string' && session.session_name
+    && session.session_state === 'ended');
+}
+
+function openSessionDeletion() {
+  const session = currentSessionRecord();
+  if (!session || session.session_local_id === null || !session.session_name || session.session_state !== 'ended') return;
+  deleteSessionConfirmation.value = '';
+  deleteSessionToken.value = '';
+  deleteSessionStatus.textContent = '';
+  el('delete-session-description').textContent = t('delete.description', {
+    name: session.session_name || t('session.unassigned'), count: session.layer_count,
+  });
+  deleteSessionDialog.showModal();
+  deleteSessionConfirmation.focus();
+}
+
+async function deleteCurrentSession(event) {
+  event.preventDefault();
+  const session = currentSessionRecord();
+  if (!session || session.session_local_id === null || !session.session_name || session.session_state !== 'ended') {
+    deleteSessionStatus.textContent = t('delete.ended_only');
+    return;
+  }
+  if (deleteSessionConfirmation.value !== session.session_name) {
+    deleteSessionStatus.textContent = t('delete.name_mismatch');
+    return;
+  }
+  const submit = el('delete-session-confirm');
+  submit.disabled = true;
+  deleteSessionStatus.textContent = t('delete.working');
+  try {
+    const result = await api('/api/v1/sessions', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-SLM-Session-Delete-Action': '1',
+        'X-SLM-Session-Delete-Authorization': `Bearer ${deleteSessionToken.value}`,
+      },
+      body: JSON.stringify({
+        expected_layer_count: Number(session.layer_count),
+        expected_session_name: session.session_name,
+        monitor_instance_id: session.monitor_instance_id,
+        session_local_id: Number(session.session_local_id),
+      }),
+    });
+    deleteSessionToken.value = '';
+    deleteSessionDialog.close();
+    window.location.hash = '';
+    window.location.reload();
+    return result;
+  } catch (error) {
+    deleteSessionStatus.textContent = t('delete.error', { error: error.message });
+  } finally {
+    submit.disabled = false;
   }
 }
 
@@ -1376,7 +1459,7 @@ function setFollow(following) {
  * Everything that depends on which layer is selected, and nothing that does not.
  *
  * Stepping a layer moves a highlight, a frame and a playhead. It does not
- * change the timeline, the severity strip or either chart, so those are left
+ * change the timeline, the severity strip or build charts, so those are left
  * alone: redrawing them per keystroke cost most of a second on a long build.
  */
 function renderSelection() {
@@ -1397,6 +1480,7 @@ function render() {
   renderFilmstrip();
   renderDefectChart();
   renderArgonChart();
+  renderCurveChart();
   renderSelection();
 }
 
@@ -1682,6 +1766,15 @@ function renderSidebar() {
     { label: t('fact.confidence'), value: pending(numeric(layer.analysis.confidence)) },
     { label: t('fact.state'), value: pending(valueLabel(layer.analysis.state)) },
   ];
+  const curve = chosen.analysis?.dark_curve;
+  if (curve && [curve.skeleton_pixels, curve.span_px, curve.severity].some(value => typeof value === 'number')) {
+    const severity = ['none', 'info', 'warning', 'critical'][Math.max(0, Math.min(3, Math.round(curve.severity ?? 0)))] || 'unknown';
+    const measurements = [
+      typeof curve.skeleton_pixels === 'number' ? t('curve.length_value', { value: Math.round(curve.skeleton_pixels) }) : null,
+      typeof curve.span_px === 'number' ? t('curve.span_value', { value: Math.round(curve.span_px) }) : null,
+    ].filter(Boolean).join(' / ');
+    statValues.push({ label: t('fact.dark_curve'), value: valueLabel(severity), note: measurements || null, missing: false });
+  }
   stats.innerHTML = statValues.map(({ label, value, note, missing }) => (
     `<div class="layer-stat${missing ? ' is-missing' : ''}"><span>${escaped(label)}</span>`
     + `<b>${escaped(value ?? t('unknown'))}</b>${note ? `<small>${escaped(note)}</small>` : ''}</div>`
@@ -2747,7 +2840,7 @@ function keepChartBase(id, surface, frame = null) {
 }
 
 function drawChartSelection() {
-  for (const id of ['#defect-chart', '#argon-chart']) {
+  for (const id of ['#defect-chart', '#argon-chart', '#curve-chart']) {
     const base = chartBases.get(id);
     const frame = chartFrames.get(id);
     const canvas = document.querySelector(id);
@@ -2977,6 +3070,38 @@ function renderArgonChart() {
   keepChartBase('#argon-chart', surface, frame);
 }
 
+function renderCurveChart() {
+  const surface = canvasContext('#curve-chart');
+  const { context, width, height } = surface;
+  const values = series().curve;
+  const colors = {
+    length: cssColor('--series-curve-length'),
+    span: cssColor('--series-curve-span'),
+    severity: cssColor('--series-curve-severity'),
+  };
+  const available = values.length.some(value => value != null)
+    || values.span.some(value => value != null)
+    || values.severity.some(value => value != null);
+  el('curve-label').textContent = available ? t('curve_chart.available') : t('curve_chart.unavailable');
+  el('curve-legend').replaceChildren(
+    legendEntry(t('curve_chart.length'), colors.length, !values.length.some(value => value != null)),
+    legendEntry(t('curve_chart.span'), colors.span, !values.span.some(value => value != null)),
+    legendEntry(t('curve_chart.severity'), colors.severity, !values.severity.some(value => value != null)),
+  );
+  if (!state.layers.length || !available) { keepChartBase('#curve-chart', surface); return; }
+  const geometryAxis = niceTicks(0, seriesHigh(values.length, values.span), 4, 100);
+  const severityAxis = { min: 0, max: 3, step: 1, ticks: [0, 1, 2, 3] };
+  const frame = chartFrame(context, width, height, [
+    { axis: geometryAxis, format: value => `${Math.round(value)}`, caption: t('curve_chart.lane_geometry'), weight: 3 },
+    { axis: severityAxis, format: value => t(`curve_chart.severity_${Math.round(value)}`), caption: t('curve_chart.lane_severity'), weight: 2 },
+  ]);
+  drawAxes(context, frame);
+  drawLine(context, values.length, frame, frame.lanes[0], colors.length);
+  drawLine(context, values.span, frame, frame.lanes[0], colors.span);
+  drawLine(context, values.severity, frame, frame.lanes[1], colors.severity);
+  keepChartBase('#curve-chart', surface, frame);
+}
+
 /**
  * The units the gauges report in, from the first layer that states them.
  *
@@ -3030,9 +3155,13 @@ function drawLine(context, points, frame, lane, color, stepped = false) {
 // ---------- wiring ----------
 
 select.addEventListener('change', () => {
+  updateDeleteControl();
   writeHash();
   loadLayers().then(() => schedulePoll(POLL_MIN_MS)).catch(error => setNotice(error.message, true));
 });
+deleteSessionOpen.addEventListener('click', openSessionDeletion);
+el('delete-session-cancel').addEventListener('click', () => { deleteSessionToken.value = ''; deleteSessionDialog.close(); });
+deleteSessionForm.addEventListener('submit', deleteCurrentSession);
 followToggle.addEventListener('click', () => setFollow(!state.follow));
 fillToggle.addEventListener('click', () => setFill(!state.fill));
 gridToggle.addEventListener('click', () => setGrid(!state.grid));
@@ -3044,7 +3173,7 @@ window.addEventListener('hashchange', () => { applyHash().catch(error => setNoti
 new ResizeObserver(() => { renderScrubber(); renderNavigator(); }).observe(scrubber);
 
 window.addEventListener('resize', () => {
-  if (state.layers.length) { renderScrubber(); renderFilmstrip(); renderDefectChart(); renderArgonChart(); drawChartSelection(); }
+  if (state.layers.length) { renderScrubber(); renderFilmstrip(); renderDefectChart(); renderArgonChart(); renderCurveChart(); drawChartSelection(); }
   clampPan();
   applyTransform();
 });

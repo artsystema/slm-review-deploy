@@ -61,6 +61,12 @@ final class MediaStore
         return $this->pathFor($relativePath);
     }
 
+    public function deleteObject(string $relativePath): bool
+    {
+        $path = $this->pathFor($relativePath);
+        return !is_file($path) || @unlink($path);
+    }
+
     private function verifyExisting(string $path, string $expectedSha256): void
     {
         if (!is_file($path) || !hash_equals($expectedSha256, hash_file('sha256', $path) ?: '')) {

@@ -9,6 +9,7 @@ require_once __DIR__ . '/ManifestValidator.php';
 require_once __DIR__ . '/MediaStore.php';
 require_once __DIR__ . '/PublicationRepository.php';
 require_once __DIR__ . '/SessionEndRepository.php';
+require_once __DIR__ . '/SessionDeletionRepository.php';
 require_once __DIR__ . '/ReviewRepository.php';
 require_once __DIR__ . '/LayerReviewRepository.php';
 require_once __DIR__ . '/Application.php';

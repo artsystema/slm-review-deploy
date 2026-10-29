@@ -17,6 +17,9 @@ return [
     // A custom token overrides the published default; this placeholder uses it.
     // Set a different token only when the operator will enter it in the browser.
     'review_token' => 'replace-with-a-different-long-random-review-token',
+    // Optional destructive-action token. Keep separate from the browser review
+    // token; session deletion stays disabled while this is null/placeholder.
+    'session_delete_token' => null,
     // Optional HTTPS player URL on a separately protected video relay.
     // No credentials, tokens, query string, or fragment in this value.
     'chamber_stream_url' => null,

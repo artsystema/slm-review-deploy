@@ -14,6 +14,7 @@ import {
   areaSeries,
   argonSeries,
   clampWindow,
+  curveSeries,
   decimate,
   defectRateSeries,
   elapsedSeries,
@@ -124,6 +125,21 @@ describe('argonSeries', () => {
   it('leaves layers with no snapshot as gaps', () => {
     const series = argonSeries([withChannels(reading(1, 180)), layer({ argon_snapshot: null })]);
     assert.deepEqual(series.get(1), [180, null]);
+  });
+});
+
+describe('curveSeries', () => {
+  it('aligns curve measurements and preserves missing as gaps', () => {
+    const layers = [
+      layer({ analysis: { dark_curve: { skeleton_pixels: 224, span_px: 181, severity: 2 } } }),
+      layer({ analysis: { dark_curve: { skeleton_pixels: null, span_px: null, severity: 3 } } }),
+      layer(),
+    ];
+    assert.deepEqual(curveSeries(layers), {
+      length: [224, null, null],
+      span: [181, null, null],
+      severity: [2, 3, null],
+    });
   });
 });
 

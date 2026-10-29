@@ -1,8 +1,7 @@
--- Remove one session's layers from the remote reviewer, via phpMyAdmin.
+-- Manual recovery procedure for removing one remote-review session in phpMyAdmin.
 --
--- There is no endpoint for this and there is not meant to be: the service is
--- read-only by design, so deletion is a deliberate operator act run against the
--- database, not something the site can be talked into doing.
+-- The main viewer now provides the preferred guarded deletion action for a
+-- named, ended session. Use this script only when that endpoint cannot run.
 --
 -- HOW TO RUN
 --   cPanel -> Databases -> phpMyAdmin, pick the review database in the left
@@ -16,8 +15,8 @@
 --   unset. Each block below stands alone and commits on its own.
 --
 -- WHAT MAKES THIS FIDDLIER THAN IT LOOKS
---   * `publication_media` references `publications` with ON DELETE RESTRICT, so
---     the media rows must go first or the publication delete simply fails.
+--   * `layer_reviews` and `publication_media` reference `publications` with
+--     ON DELETE RESTRICT, so both must go first.
 --   * Media is content-addressed and SHARED. Two layers photographing an
 --     unchanged bed keep one row and one file, so deleting a session's files by
 --     listing its own hashes would take images other sessions still display.
@@ -54,15 +53,21 @@ SELECT p.session_local_id,
 -- ===========================================================================
 -- BLOCK 2 -- DELETE. Run only once block 1 named the session you meant.
 -- Run the whole block in one Go: the transaction is what stops a failure on the
--- second delete stranding media rows whose publications are already gone, and
--- it only protects you if both deletes and the COMMIT arrive together.
--- phpMyAdmin should report two result sets; the second count must equal
+-- later delete stranding dependent rows whose publications are already gone,
+-- and it only protects you if all deletes and the COMMIT arrive together.
+-- phpMyAdmin should report several result sets; the publication count must equal
 -- `layers_to_delete` from block 1.
 -- ===========================================================================
 SET @monitor := 'f2c8ea59-a7ec-4b7b-8ce8-a24313ec6cd4';
 SET @session := 24;
 
 START TRANSACTION;
+
+DELETE lr
+  FROM layer_reviews lr
+  JOIN publications p ON p.id = lr.publication_id
+ WHERE p.monitor_instance_id = @monitor
+   AND p.session_local_id <=> @session;
 
 DELETE pm
   FROM publication_media pm
@@ -71,6 +76,10 @@ DELETE pm
    AND p.session_local_id <=> @session;
 
 DELETE FROM publications
+ WHERE monitor_instance_id = @monitor
+   AND session_local_id <=> @session;
+
+DELETE FROM session_ends
  WHERE monitor_instance_id = @monitor
    AND session_local_id <=> @session;
 

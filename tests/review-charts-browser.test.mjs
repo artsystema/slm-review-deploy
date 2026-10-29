@@ -36,10 +36,18 @@ const layers = Array.from({ length: 600 }, (_, position) => {
       confidence: flagged ? 0.82 : 0,
       deficit_area_frac: flagged ? 0.004 + (position % 5) * 0.001 : 0.0002 + (position % 7) * 0.00004,
       renewal_unrenewed_frac: renewal ? (flagged ? 0.006 : 0.0001) : null,
+      dark_curve: {
+        skeleton_pixels: flagged ? 180 + (position % 20) : 0,
+        span_px: flagged ? 150 + (position % 12) : 0,
+        severity: flagged ? 2 : 0,
+      },
       reason: flagged ? 'deficit 0.60% at or above 0.40%' : 'deficit 0.03% below 2.00%',
       metrics: renewal ? {
         renewal_before_after_unrenewed_frac: flagged ? 0.006 : 0.0001,
         renewal_before_after_confidence: 0.9,
+        dark_curve_skeleton_pixels: flagged ? 180 + (position % 20) : 0,
+        dark_curve_span_px: flagged ? 150 + (position % 12) : 0,
+        dark_curve_severity_reported: flagged ? 2 : 0,
       } : {},
     },
     argon_snapshot: {
@@ -72,11 +80,11 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
       return;
     }
     if (url.pathname === '/api/v1/sessions') {
-      json(response, { sessions: [{ monitor_instance_id: monitor, session_local_id: 4, session_name: 'Fixture build', session_state: 'active', layer_count: layers.length }] });
+      json(response, { sessions: [{ monitor_instance_id: monitor, session_local_id: 4, session_name: 'Fixture build', session_state: 'ended', layer_count: layers.length }] });
       return;
     }
     if (url.pathname === '/api/v1/layers/index') {
-      json(response, { layers: layers.map(({ media, run, monitor_software_version, ...rest }) => ({ ...rest, analysis: { status: rest.analysis.status, severity: rest.analysis.severity, deficit_area_frac: rest.analysis.deficit_area_frac, renewal_unrenewed_frac: rest.analysis.renewal_unrenewed_frac } })), truncated: false, latest_id: layers.length, session: null, build: null });
+      json(response, { layers: layers.map(({ media, run, monitor_software_version, ...rest }) => ({ ...rest, analysis: { status: rest.analysis.status, severity: rest.analysis.severity, deficit_area_frac: rest.analysis.deficit_area_frac, renewal_unrenewed_frac: rest.analysis.renewal_unrenewed_frac, dark_curve: rest.analysis.dark_curve } })), truncated: false, latest_id: layers.length, session: null, build: null });
       return;
     }
     if (url.pathname === '/api/v1/layers') {
@@ -104,13 +112,16 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
       await page.route('https://live.example.com/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: '' }));
       await page.goto(`http://127.0.0.1:${server.address().port}/`);
       await page.locator('#layer-title', { hasText: 'Layer 2354' }).waitFor();
-      await page.locator('.layer-stat small').waitFor();
+      await page.locator('#layer-stats .layer-stat').nth(4).waitFor();
 
       const stats = page.locator('#layer-stats .layer-stat');
-      assert.equal(await stats.count(), 4);
-      assert.deepEqual(await stats.locator('span').allTextContents(), ['Deficit area', 'Unrenewed', 'Confidence', 'State']);
+      assert.equal(await stats.count(), 5);
+      assert.deepEqual(await stats.locator('span').allTextContents(), ['Deficit area', 'Unrenewed', 'Confidence', 'State', 'Dark curve']);
       assert.equal(await stats.nth(1).locator('b').textContent(), '0.01%');
       assert.equal(await stats.nth(1).locator('small').textContent(), 'conf 0.90');
+      await page.locator('#delete-session-open').click();
+      assert.match(await page.locator('#delete-session-description').textContent(), /Fixture build/);
+      await page.locator('#delete-session-cancel').click();
       assert.deepEqual(await page.locator('#layer-summary dt').allTextContents(), ['Captured', 'Status']);
       const reasonBorders = await page.locator('#analysis-reason').evaluate(node => {
         const style = getComputedStyle(node);
@@ -119,6 +130,7 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
       assert.deepEqual(reasonBorders, ['1px', '1px'], 'the reason box has an even border, no accent bar');
 
       assert.deepEqual(await page.locator('#defect-legend span').allTextContents(), ['Defect rate', 'Deficit area', 'Unrenewed']);
+      assert.deepEqual(await page.locator('#curve-legend span').allTextContents(), ['Observed length', 'Span', 'Rule severity']);
       const defect = await page.locator('#defect-chart').boundingBox();
       const argon = await page.locator('#argon-chart').boundingBox();
       if (width > 760) {
@@ -126,7 +138,7 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
         assert.ok(Math.abs(defect.height - argon.height) < 1, 'chart canvases are the same height');
       }
       // Something was drawn in the gutter (tick labels) and along the bottom (layer numbers).
-      const inked = await page.evaluate(() => ['#defect-chart', '#argon-chart'].map(id => {
+      const inked = await page.evaluate(() => ['#defect-chart', '#argon-chart', '#curve-chart'].map(id => {
         const canvas = document.querySelector(id);
         const ratio = window.devicePixelRatio || 1;
         const context = canvas.getContext('2d');
@@ -135,7 +147,7 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
         const any = data => data.some((value, index) => index % 4 === 3 && value > 0);
         return [any(gutter), any(floor)];
       }));
-      assert.deepEqual(inked, [[true, true], [true, true]], 'both charts carry axis labels');
+      assert.deepEqual(inked, [[true, true], [true, true], [true, true]], 'all charts carry axis labels');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal page scroll');
       if (process.env.REVIEW_SCREENSHOTS) {
         await page.screenshot({ path: join(process.env.REVIEW_SCREENSHOTS, `review-charts-${width}.png`), fullPage: true });
