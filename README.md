@@ -176,6 +176,13 @@ repeat those measurements so the chart cursor and evidence image can be checked
 together. The curve keeps its own axes; pixel geometry is never plotted against
 the defect percentage scale.
 
+All three build charts expose exact per-layer details without interpolating
+between samples. Hover with a mouse, or press and drag horizontally with a
+finger, to see the nearest stored layer, its analysis state and every series
+value plotted by that chart. A touch tooltip remains visible after release so
+the finger does not cover the values; tapping elsewhere dismisses it. Vertical
+touch scrolling remains available over the charts.
+
 ## Deleting an ended remote session
 
 The bottom of the main viewer offers **Delete this ended test session** for a

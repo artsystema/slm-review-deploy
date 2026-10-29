@@ -13,6 +13,7 @@ import { describe, it } from 'node:test';
 import {
   areaSeries,
   argonSeries,
+  chartLayerPosition,
   clampWindow,
   curveSeries,
   decimate,
@@ -140,6 +141,21 @@ describe('curveSeries', () => {
       span: [181, null, null],
       severity: [2, 3, null],
     });
+  });
+});
+
+describe('chartLayerPosition', () => {
+  it('maps chart pixels to the nearest real layer without interpolation', () => {
+    assert.equal(chartLayerPosition(20, 20, 100, 11), 0);
+    assert.equal(chartLayerPosition(69, 20, 100, 11), 5);
+    assert.equal(chartLayerPosition(120, 20, 100, 11), 10);
+  });
+
+  it('clamps outside the plot and handles empty or singleton charts', () => {
+    assert.equal(chartLayerPosition(-500, 20, 100, 11), 0);
+    assert.equal(chartLayerPosition(500, 20, 100, 11), 10);
+    assert.equal(chartLayerPosition(50, 20, 100, 1), 0);
+    assert.equal(chartLayerPosition(50, 20, 100, 0), -1);
   });
 });
 
