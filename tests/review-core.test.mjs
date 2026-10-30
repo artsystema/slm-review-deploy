@@ -18,6 +18,7 @@ import {
   curveSeries,
   decimate,
   defectRateSeries,
+  detectorFindings,
   elapsedSeries,
   elapsedTicks,
   formatElapsed,
@@ -824,6 +825,22 @@ describe('chart axes', () => {
   it('has nothing to mark on an empty build and one mark on a single layer', () => {
     assert.deepEqual(layerTicks([], 400), []);
     assert.deepEqual(layerTicks([12], 400), [{ position: 0, label: 12 }]);
+  });
+});
+
+describe('detectorFindings', () => {
+  it('preserves simultaneous recorded warnings and critical findings', () => {
+    assert.deepEqual(detectorFindings({ texture_severity_reported: 3,
+      bottom_edge_severity_reported: 2, broad_dark_severity_reported: 3,
+      dark_curve_severity_reported: 1 }), [
+      { channel: 'texture', severity: 'critical' },
+      { channel: 'bottom_edge', severity: 'warning' },
+      { channel: 'broad_dark', severity: 'critical' },
+    ]);
+  });
+  it('does not invent old/missing, failed or invalid detector results', () => {
+    assert.deepEqual(detectorFindings(), []);
+    assert.deepEqual(detectorFindings({ broad_dark_state: -1, dark_curve_severity_reported: NaN }), []);
   });
 });
 

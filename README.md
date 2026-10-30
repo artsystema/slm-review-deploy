@@ -544,3 +544,11 @@ Every frame the monitor sends already has a `<print name> | <capture time>`
 strip burned along its top, so a frame opened from a shared link still names its
 build once the page around it is gone. The service stores and serves the frames
 as received; it does not add or read the strip.
+# Concurrent detector findings (2026-10-30)
+
+The selected-layer explanation now lists every recorded elevated channel,
+including bottom-edge and broad-dark observations, beside the primary reason.
+It reads existing numeric metrics and does not infer missing historical
+verdicts. No migration or media-role change; new Analyze images retain the
+four-image contract. Deploy the updated viewer assets through the usual
+deployment repository/cPanel path.
