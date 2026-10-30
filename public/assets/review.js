@@ -51,8 +51,8 @@ import {
 // 2026-10-14: review-core.js gained gridColumns, so its token moved again.
 // 2026-10-17: chart axis helpers and new translation keys; both tokens moved.
 // 2026-10-29: chart details and optional-channel visibility added core helpers.
-} from './review-core.js?v=20261030-1';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261030-1';
+} from './review-core.js?v=20261030-2';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261030-2';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
 const LANGUAGE_KEY = 'slm-review-language';
@@ -1780,8 +1780,12 @@ function renderSidebar() {
   const deficit = layer.analysis.deficit_area_frac;
   const metrics = layer.analysis.metrics || {};
   if (!waiting) {
-    const findings = detectorFindings(metrics).map(({ channel, severity }) =>
-      `${t(`detector.${channel}`)}: ${valueLabel(severity)}`);
+    const findings = detectorFindings(metrics).map(({ channel, severity, held, available, currentSeverity }) => {
+      const detail = held ? ` (${t('selected.held')}; ${available
+        ? `${t('selected.current')}: ${valueLabel(currentSeverity || 'unknown')}`
+        : t('selected.measurement_unavailable')})` : '';
+      return `${t(`detector.${channel}`)}: ${valueLabel(severity)}${detail}`;
+    });
     if (findings.length) reason.textContent += ` · ${t('selected.concurrent')}: ${findings.join('; ')}`;
   }
   const statValues = [

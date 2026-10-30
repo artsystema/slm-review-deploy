@@ -10,6 +10,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+it('keeps held area episodes distinct from current warnings and missing readings', () => {
+  assert.deepEqual(detectorFindings({ broad_dark_severity_reported: 3,
+    broad_dark_episode_held: 1, broad_dark_state: 1, broad_dark_current_severity_reported: 2 }),
+  [{ channel: 'broad_dark', severity: 'critical', held: true, available: true, currentSeverity: 'warning' }]);
+  assert.deepEqual(detectorFindings({ broad_dark_severity_reported: 3,
+    broad_dark_episode_held: 1, broad_dark_state: -1, broad_dark_current_severity_reported: 0 }),
+  [{ channel: 'broad_dark', severity: 'critical', held: true, available: false }]);
+  assert.deepEqual(detectorFindings({ broad_dark_severity_reported: 3 }),
+    [{ channel: 'broad_dark', severity: 'critical' }]);
+});
+
 import {
   areaSeries,
   argonSeries,

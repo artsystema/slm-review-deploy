@@ -54,6 +54,9 @@ const layers = Array.from({ length: 600 }, (_, position) => {
         dark_curve_severity_reported: flagged ? 2 : 0,
         bottom_edge_severity_reported: flagged ? 2 : 0,
         broad_dark_severity_reported: flagged ? 3 : 0,
+        broad_dark_episode_held: flagged ? 1 : 0,
+        broad_dark_current_severity_reported: flagged ? 2 : 0,
+        broad_dark_state: 1,
       } : {},
     },
     argon_snapshot: {
@@ -202,6 +205,7 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
     await flaggedPage.locator('#layer-stats .layer-stat.is-critical').waitFor();
     await flaggedPage.locator('#analysis-reason', { hasText: /Bottom edge: warning/i }).waitFor();
     assert.match(await flaggedPage.locator('#analysis-reason').textContent(), /Broad dark region: critical/i);
+    assert.match(await flaggedPage.locator('#analysis-reason').textContent(), /held episode; current evidence: Warning/i);
     assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(0).getAttribute('class'), 'layer-stat is-warning');
     assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(1).getAttribute('class'), 'layer-stat is-critical');
     assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(4).getAttribute('class'), 'layer-stat is-warning');
