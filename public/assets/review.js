@@ -6,6 +6,7 @@ import {
   curveSeries,
   decimate,
   defectRateSeries,
+  detectorFindings,
   elapsedSeries,
   elapsedTicks,
   eligible,
@@ -50,8 +51,8 @@ import {
 // 2026-10-14: review-core.js gained gridColumns, so its token moved again.
 // 2026-10-17: chart axis helpers and new translation keys; both tokens moved.
 // 2026-10-29: chart details and optional-channel visibility added core helpers.
-} from './review-core.js?v=20261029-3';
-import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261029-2';
+} from './review-core.js?v=20261030-1';
+import { localeFor, normalizeLanguage, translate } from './review-i18n.js?v=20261030-1';
 import { createDecisionPanel } from './decision-panel.js?v=20261006';
 
 const LANGUAGE_KEY = 'slm-review-language';
@@ -1778,6 +1779,11 @@ function renderSidebar() {
   const renewal = waiting ? { value: t('loading'), note: null, missing: false } : renewalFact(layer);
   const deficit = layer.analysis.deficit_area_frac;
   const metrics = layer.analysis.metrics || {};
+  if (!waiting) {
+    const findings = detectorFindings(metrics).map(({ channel, severity }) =>
+      `${t(`detector.${channel}`)}: ${valueLabel(severity)}`);
+    if (findings.length) reason.textContent += ` · ${t('selected.concurrent')}: ${findings.join('; ')}`;
+  }
   const statValues = [
     {
       label: t('fact.deficit'), value: percent(deficit), missing: typeof deficit !== 'number',

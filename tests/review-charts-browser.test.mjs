@@ -52,6 +52,8 @@ const layers = Array.from({ length: 600 }, (_, position) => {
         dark_curve_skeleton_pixels: flagged ? 180 + (position % 20) : 0,
         dark_curve_span_px: flagged ? 150 + (position % 12) : 0,
         dark_curve_severity_reported: flagged ? 2 : 0,
+        bottom_edge_severity_reported: flagged ? 2 : 0,
+        broad_dark_severity_reported: flagged ? 3 : 0,
       } : {},
     },
     argon_snapshot: {
@@ -198,6 +200,8 @@ test('selected-layer stats are tiles and the build charts line up with labelled 
     await flaggedPage.goto(`http://127.0.0.1:${server.address().port}/#m=${monitor}&s=4&r=4&l=2065`);
     await flaggedPage.locator('#layer-title', { hasText: 'Layer 2065' }).waitFor();
     await flaggedPage.locator('#layer-stats .layer-stat.is-critical').waitFor();
+    await flaggedPage.locator('#analysis-reason', { hasText: /Bottom edge: warning/i }).waitFor();
+    assert.match(await flaggedPage.locator('#analysis-reason').textContent(), /Broad dark region: critical/i);
     assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(0).getAttribute('class'), 'layer-stat is-warning');
     assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(1).getAttribute('class'), 'layer-stat is-critical');
     assert.equal(await flaggedPage.locator('#layer-stats .layer-stat').nth(4).getAttribute('class'), 'layer-stat is-warning');

@@ -30,6 +30,16 @@ export function severityToken(value) {
   return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
 }
 
+/** Only recorded channel verdicts; never infer a detector from the headline. */
+export function detectorFindings(metrics = {}) {
+  return ['texture', 'renewal', 'bottom_edge', 'surface_structure', 'dark_curve', 'broad_dark']
+    .flatMap(channel => {
+      const rank = metrics?.[`${channel}_severity_reported`];
+      return rank === 2 || rank === 3
+        ? [{ channel, severity: rank === 3 ? 'critical' : 'warning' }] : [];
+    });
+}
+
 function severityRank(token) {
   return SEVERITY_RANK[token] ?? 1;
 }
