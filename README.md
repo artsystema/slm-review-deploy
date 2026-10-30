@@ -552,3 +552,10 @@ It reads existing numeric metrics and does not infer missing historical
 verdicts. No migration or media-role change; new Analyze images retain the
 four-image contract. Deploy the updated viewer assets through the usual
 deployment repository/cPanel path.
+
+New broad-dark observations can distinguish a held episode from current
+evidence and measurement availability. The selected-layer explanation labels
+these separately; a current warning elsewhere is not described as a new
+critical detection. Legacy observations without these metrics keep their
+recorded meaning. This is an asset-only update with the same four-image
+contract and no remote migration.

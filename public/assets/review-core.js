@@ -35,8 +35,17 @@ export function detectorFindings(metrics = {}) {
   return ['texture', 'renewal', 'bottom_edge', 'surface_structure', 'dark_curve', 'broad_dark']
     .flatMap(channel => {
       const rank = metrics?.[`${channel}_severity_reported`];
-      return rank === 2 || rank === 3
-        ? [{ channel, severity: rank === 3 ? 'critical' : 'warning' }] : [];
+      if (rank !== 2 && rank !== 3) return [];
+      const finding = { channel, severity: rank === 3 ? 'critical' : 'warning' };
+      if (channel === 'broad_dark' && typeof metrics.broad_dark_episode_held === 'number') {
+        finding.held = metrics.broad_dark_episode_held === 1;
+        finding.available = metrics.broad_dark_state === 1;
+        const current = metrics.broad_dark_current_severity_reported;
+        if (finding.available && Number.isInteger(current) && current >= 0 && current <= 3) {
+          finding.currentSeverity = ['none', 'info', 'warning', 'critical'][current];
+        }
+      }
+      return [finding];
     });
 }
 
